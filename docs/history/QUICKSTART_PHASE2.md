@@ -45,8 +45,8 @@ python -m app.ingest probe
 ### Created 5 Documents
 1. `PHASE2_DELIVERABLES.md` - This summary
 2. `PHASE2_SUMMARY.md` - Detailed explanation
-3. `docs/PHASE2_AUDIT.md` - What was fixed
-4. `docs/PHASE2_PROGRESS.md` - Progress tracker
+3. `docs/history/PHASE2_AUDIT.md` - What was fixed
+4. `docs/history/PHASE2_PROGRESS.md` - Progress tracker
 5. `docs/PROBE_COMMAND_GUIDE.md` - How to use probe
 
 ---

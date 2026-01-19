@@ -240,7 +240,7 @@ docker compose run --rm app pytest tests/test_observability.py -v
 - **docs/RUNBOOK_SMOKE.md** - Operator smoke test procedures
 - **docs/UPGRADE.md** - Upgrade and rollback guide
 - **docs/DEPLOYMENT.md** - Production deployment guide
-- **docs/PHASE9_SUMMARY.md** - Phase 9 implementation summary
+- **docs/history/PHASE9_SUMMARY.md** - Phase 9 implementation summary
 
 ---
 

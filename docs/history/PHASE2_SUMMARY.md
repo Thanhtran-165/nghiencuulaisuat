@@ -18,8 +18,8 @@
 
 ### Files Created
 ```
-docs/PHASE2_AUDIT.md         - Audit findings and inconsistencies
-docs/PHASE2_PROGRESS.md      - Progress tracking document
+docs/history/PHASE2_AUDIT.md         - Audit findings and inconsistencies
+docs/history/PHASE2_PROGRESS.md      - Progress tracking document
 ```
 
 ### Files Modified
@@ -268,8 +268,8 @@ cat reports/provider_probe.json | python -m json.tool
 
 ### Updated Documentation
 
-- ✅ `docs/PHASE2_AUDIT.md` - All findings documented
-- ✅ `docs/PHASE2_PROGRESS.md` - Progress tracker
+- ✅ `docs/history/PHASE2_AUDIT.md` - All findings documented
+- ✅ `docs/history/PHASE2_PROGRESS.md` - Progress tracker
 - ⏳ PROJECT_SUMMARY.md - Needs endpoint count update (pending Phase 2 completion)
 - ⏳ README.md - Needs probe command documentation (pending Phase 2 completion)
 

@@ -109,7 +109,7 @@ def _apply_backwards_compatibility():
    - Includes curl commands for health, readyz, metrics, and monitoring dashboard
    - Operator-proof verification steps
 
-6. **docs/PHASE8_SUMMARY.md** (~30 lines changed)
+6. **docs/history/PHASE8_SUMMARY.md** (~30 lines changed)
    - Updated all `BASIC_AUTH_*` references to `ADMIN_AUTH_*`
    - Updated endpoint tables
    - Updated security configuration examples
@@ -137,7 +137,7 @@ def _apply_backwards_compatibility():
 
 ### 1. How to Enable Admin Auth (Updated)
 
-**File**: `docs/DEPLOYMENT.md`, `docs/PHASE8_SUMMARY.md`
+**File**: `docs/DEPLOYMENT.md`, `docs/history/PHASE8_SUMMARY.md`
 
 ```bash
 # In .env
@@ -353,7 +353,7 @@ docker compose run --rm app pytest tests/test_observability.py -v
 | .env.example | +12 lines | Show ADMIN_AUTH_* as canonical |
 | docs/DEPLOYMENT.md | ~50 lines changed | Update auth examples + add test section |
 | README.md | +25 lines | Add verification checklist |
-| docs/PHASE8_SUMMARY.md | ~30 lines changed | Update auth references |
+| docs/history/PHASE8_SUMMARY.md | ~30 lines changed | Update auth references |
 | tests/test_observability.py | +230 lines | Add 9 verification tests |
 
 **Total**: 6 files modified, 396 lines added/changed

@@ -3,7 +3,7 @@
 ## What Has Been Completed
 
 ### ✅ Step 1: Repo Reality Check
-**Deliverable**: `docs/PHASE2_AUDIT.md`
+**Deliverable**: `docs/history/PHASE2_AUDIT.md`
 
 **Key Findings**:
 - API endpoints: 9 (not 8 as documented)
@@ -31,8 +31,8 @@
 
 ### Created (4 files)
 ```
-docs/PHASE2_AUDIT.md              - Audit findings
-docs/PHASE2_PROGRESS.md           - Progress tracking
+docs/history/PHASE2_AUDIT.md              - Audit findings
+docs/history/PHASE2_PROGRESS.md           - Progress tracking
 docs/PROBE_COMMAND_GUIDE.md       - Probe command guide
 PHASE2_SUMMARY.md                 - Complete summary
 ```

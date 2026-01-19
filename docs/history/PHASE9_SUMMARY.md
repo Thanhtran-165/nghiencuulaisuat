@@ -400,9 +400,9 @@ curl http://localhost:8000/readyz
 - **docs/RUNBOOK_SMOKE.md**: Operator smoke test procedures
 - **docs/UPGRADE.md**: Upgrade and rollback procedures
 - **docs/DEPLOYMENT.md**: Production deployment guide
-- **docs/PHASE8_SUMMARY.md**: Phase 8 observability features
-- **docs/PHASE8.1_SUMMARY.md**: Config cleanup and verification
-- **docs/PHASE9_SUMMARY.md**: This document
+- **docs/history/PHASE8_SUMMARY.md**: Phase 8 observability features
+- **docs/history/PHASE8.1_SUMMARY.md**: Config cleanup and verification
+- **docs/history/PHASE9_SUMMARY.md**: This document
 
 ---
 

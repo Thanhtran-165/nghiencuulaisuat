@@ -112,23 +112,33 @@ You have two options:
 **Option 1: Manual (Default)**
 - Go to `http://127.0.0.1:3002/admin/ingest`
 - Click "Run Daily Ingestion"
+- Or use the Dashboard button "Cập nhật dữ liệu"
 - Data will be fetched for today
 
 **Option 2: Automatic (macOS LaunchAgent)**
-Run:
+Run (recommended for local macOS):
 ```bash
 ./scripts/install_launchagent_macos.sh
 ```
-This will write DB/logs to `~/Library/Application Support/vn-bond-lab` so it works even if the repo is in iCloud Drive.
-   # Copy the example file
-   cp .env.example .env
-   ```
-3. Edit `.env` and change:
-   ```
-   SCHEDULER_ENABLED=true
-   ```
-4. Restart: `docker compose up`
-5. The system will now automatically fetch data every day at 18:05 (Asia/Ho_Chi_Minh timezone)
+This will:
+- Run once per day (default `18:05`, local time)
+- Write DB/logs to `~/Library/Application Support/vn-bond-lab` (works even if repo is in iCloud Drive)
+- Trigger `POST /api/admin/ingest/daily` if the backend is running, to avoid DuckDB file locks
+
+Optional overrides:
+```bash
+DAILY_TIME=07:30 ./scripts/install_launchagent_macos.sh
+PROVIDERS="hnx_yield_curve sbv_interbank lai_suat_rates" ./scripts/install_launchagent_macos.sh
+```
+
+## Documentation
+
+- `QUICKSTART.md` - Quick start (Docker)
+- `docs/DEPLOYMENT.md` - Deployment notes
+- `docs/RUNBOOK_SMOKE.md` - Smoke/runbook checks
+- `docs/GLOBAL_DATA.md` - Optional global data (FRED)
+- `docs/AUDIT.md` - Audit notes and cleanup plan
+- `docs/history/README.md` - Archived phase docs
 
 ## Advanced Usage (for Developers)
 
@@ -406,7 +416,7 @@ uvicorn app.main:app --reload
 
 ## License
 
-MIT License - feel free to use this project for personal or commercial purposes.
+MIT License. See `LICENSE`.
 
 ## Credits
 

@@ -17,7 +17,7 @@
 - **Database**: 4 tables verified with upsert logic
 - **Inconsistencies Found**: 3 minor issues documented
 
-**Deliverable**: ✅ `docs/PHASE2_AUDIT.md` created
+**Deliverable**: ✅ `docs/history/PHASE2_AUDIT.md` created
 
 ---
 
@@ -164,7 +164,7 @@ New "Provider Status" panel showing:
 ## 📊 Summary of Changes
 
 ### Files Created (1)
-- ✅ `docs/PHASE2_AUDIT.md` - Audit findings
+- ✅ `docs/history/PHASE2_AUDIT.md` - Audit findings
 
 ### Files Modified (3)
 - ✅ `app/ingest.py` - Added probe command
