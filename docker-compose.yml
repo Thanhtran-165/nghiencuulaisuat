@@ -41,6 +41,10 @@ services:
       - SBV_BASE_URL=https://www.sbv.gov.vn
       - ABO_BASE_URL=https://asianbondsonline.adb.org
 
+      # Optional API keys (set in local `.env` or shell; `.env` is gitignored)
+      - TRADING_ECONOMICS_API_KEY=${TRADING_ECONOMICS_API_KEY:-}
+      - FRED_API_KEY=${FRED_API_KEY:-}
+
       # Playwright
       - PLAYWRIGHT_HEADLESS=true
       - PLAYWRIGHT_TIMEOUT=30000

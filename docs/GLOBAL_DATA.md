@@ -15,12 +15,14 @@ VN Bond Lab supports optional integration with FRED (Federal Reserve Economic Da
 
 ### 2. Configure Environment Variables
 
-Add to your `.env` file:
+Add to your `.env` file (repo đã ignore `.env`, nên API key của bạn sẽ không bị commit lên GitHub):
 
 ```bash
 # FRED API Configuration (Optional)
 FRED_API_KEY=your_api_key_here
 ```
+
+Nếu bạn chạy bằng Docker Compose: `docker-compose.yml` sẽ tự pass `FRED_API_KEY` vào container (thông qua `${FRED_API_KEY}`), nên chỉ cần set trong `.env` là đủ.
 
 ### 3. Install Dependencies
 
