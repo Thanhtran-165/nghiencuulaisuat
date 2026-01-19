@@ -110,13 +110,14 @@ class DailySnapshotGenerator:
     def _generate_tom_tat(self, metrics: list) -> Dict[str, Any]:
         """Generate Tóm tắt (Summary) section"""
         # Extract key metrics
-        metric_dict = {m['metric_name']: m['metric_value'] for m in metrics if m['metric_value'] is not None}
+        metric_value = {m['metric_name']: m['metric_value'] for m in metrics if m.get('metric_value') is not None}
+        metric_text = {m['metric_name']: m['metric_value_text'] for m in metrics if m.get('metric_value_text') is not None}
 
-        score = metric_dict.get('transmission_score')
-        bucket = metric_dict.get('regime_bucket')
-        level_10y = metric_dict.get('level_10y')
-        slope_10y_2y = metric_dict.get('slope_10y_2y')
-        ib_on = metric_dict.get('ib_on')
+        score = metric_value.get('transmission_score')
+        bucket = metric_text.get('regime_bucket') or metric_value.get('regime_bucket')
+        level_10y = metric_value.get('level_10y')
+        slope_10y_2y = metric_value.get('slope_10y_2y')
+        ib_on = metric_value.get('ib_on')
 
         return {
             'diem_so': score,

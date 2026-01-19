@@ -95,6 +95,10 @@ class AlertEngine:
 
         if use_db_thresholds:
             thresholds = self._load_thresholds()
+            # Backwards-compatible default: if the DB has no rows (fresh install),
+            # fall back to hardcoded thresholds so alerting still works.
+            if not thresholds:
+                thresholds = self._get_default_thresholds()
         else:
             thresholds = self._get_default_thresholds()
 

@@ -1430,7 +1430,9 @@ class TransmissionAnalytics:
             List of alert dictionaries
         """
         if target_date is None:
-            return []
+            # Keep a convenient API for tests/callers that want to detect
+            # threshold-based alerts from a metrics dict without managing dates.
+            target_date = date.today()
 
         from app.analytics.alert_engine import AlertEngine
 

@@ -701,7 +701,7 @@ class TestDemoMode:
         db.close()
 
     def test_snapshot_works_with_demo_data(self, temp_db):
-        """Test that /snapshot/today works with demo data"""
+        """Test that /api/snapshot/today works with demo data"""
         from fastapi.testclient import TestClient
         from app.main import app
         from app.db.schema import db_manager
@@ -724,7 +724,7 @@ class TestDemoMode:
         db_manager.__dict__.update(temp_db.__dict__)
 
         client = TestClient(app)
-        response = client.get("/snapshot/today")
+        response = client.get("/api/snapshot/today")
 
         # Should return 200
         assert response.status_code == 200

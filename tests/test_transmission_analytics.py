@@ -21,9 +21,11 @@ class TestTransmissionMetrics:
         assert isinstance(metrics, dict)
         assert isinstance(alerts, list)
 
-        # Score should be None when no data available
-        assert metrics.get('transmission_score') is None
-        assert metrics.get('regime_bucket') is None
+        # Score uses dict semantics (value + sources). With insufficient history, a neutral score is returned.
+        assert isinstance(metrics.get('transmission_score'), dict)
+        assert metrics['transmission_score'].get('value') == 50.0
+        assert isinstance(metrics.get('regime_bucket'), dict)
+        assert metrics['regime_bucket'].get('value_text') == 'B2'
 
     def test_compute_curve_metrics(self, temp_db, sample_yield_curve_data):
         """Test curve metrics computation"""
@@ -187,7 +189,7 @@ class TestAlertDetection:
         analytics = TransmissionAnalytics(temp_db)
         metrics = {}
 
-        alerts = analytics.detect_alerts(metrics)
+        alerts = analytics.detect_alerts(metrics, target_date=date(2024, 1, 15))
 
         assert isinstance(alerts, list)
         # Should return empty list when no metrics available
@@ -203,7 +205,7 @@ class TestAlertDetection:
             'liquidity_data_available': True
         }
 
-        alerts = analytics.detect_alerts(metrics)
+        alerts = analytics.detect_alerts(metrics, target_date=date(2024, 1, 15))
 
         # Should have liquidity spike alert
         liquidity_alerts = [a for a in alerts if a['alert_type'] == 'ALERT_LIQUIDITY_SPIKE']
@@ -220,7 +222,7 @@ class TestAlertDetection:
             'supply_data_available': True
         }
 
-        alerts = analytics.detect_alerts(metrics)
+        alerts = analytics.detect_alerts(metrics, target_date=date(2024, 1, 15))
 
         # Should have auction weak alert
         auction_alerts = [a for a in alerts if a['alert_type'] == 'ALERT_AUCTION_WEAK']
@@ -236,7 +238,7 @@ class TestAlertDetection:
             'demand_data_available': True
         }
 
-        alerts = analytics.detect_alerts(metrics)
+        alerts = analytics.detect_alerts(metrics, target_date=date(2024, 1, 15))
 
         # Should have turnover drop alert
         turnover_alerts = [a for a in alerts if a['alert_type'] == 'ALERT_TURNOVER_DROP']
@@ -354,9 +356,12 @@ class TestSnapshotGenerator:
         assert 'ghi_chu' in snapshot
 
         # Check tom_tat
-        if metrics.get('transmission_score'):
-            assert snapshot['tom_tat']['diem_so'] == metrics['transmission_score']
-            assert snapshot['tom_tat']['nhom'] == metrics['regime_bucket']
+        score_val = (metrics.get('transmission_score') or {}).get('value')
+        bucket_val = (metrics.get('regime_bucket') or {}).get('value_text')
+        if score_val is not None:
+            assert snapshot['tom_tat']['diem_so'] == score_val
+        if bucket_val is not None:
+            assert snapshot['tom_tat']['nhom'] == bucket_val
 
         # Check dien_giai
         assert isinstance(snapshot['dien_giai'], list)
@@ -378,8 +383,8 @@ class TestTransmissionScore:
 
         score, components = analytics._compute_transmission_score(target_date, metrics)
 
-        # Score should be None when no data available
-        assert score is None
+        # Neutral score until enough z-score history accumulates
+        assert score == 50.0
         assert isinstance(components, dict)
 
     def test_compute_transmission_score_with_partial_data(self, temp_db):
