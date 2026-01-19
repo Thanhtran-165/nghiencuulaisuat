@@ -1,0 +1,39 @@
+{
+  "name": "vn-bond-lab-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "predev": "node scripts/kill_project_next_dev.mjs --ignore-missing --quiet && node scripts/ensure_dev_cache.mjs",
+    "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 next dev -p 3002",
+    "dev:clean": "node scripts/kill_project_next_dev.mjs --ignore-missing --quiet && rm -rf .next-dev && npm run dev",
+    "dev:guard": "bash scripts/dev_with_guard.sh",
+    "prebuild": "node scripts/kill_project_next_dev.mjs --ignore-missing --quiet",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "lint": "next lint",
+    "verify:css": "bash scripts/stress_frontend_css.sh"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.16",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.446.0",
+    "next": "^15.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "recharts": "^2.12.0",
+    "tailwind-merge": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "cross-env": "^10.1.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.0.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.6.0"
+  }
+}

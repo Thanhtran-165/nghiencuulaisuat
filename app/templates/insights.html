@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}Nhận định - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Nhận định (3 thời hạn)</h1>
+    <p>Thông tin về điều kiện thị trường theo <b>phiên</b> (không phải calendar days) để hỗ trợ quyết định vay vốn.</p>
+</div>
+
+<div class="glass-card mb-4">
+    <h2>VM‑CI (tổng quan)</h2>
+    <div class="insights-vmci">
+        <div class="insights-vmci-main">
+            <div class="insights-vmci-score" id="vmciScore">—</div>
+            <div class="insights-vmci-side">
+                <div id="vmciBucketRow"></div>
+                <div class="metric-change" id="vmciNote">Đang tải…</div>
+            </div>
+        </div>
+        <details class="insights-details" style="margin-top: 10px;">
+            <summary>Chi tiết</summary>
+            <div id="vmciMeta" style="margin-top: 8px; color: var(--text-secondary);"></div>
+        </details>
+    </div>
+</div>
+
+<div id="horizonCards" class="dashboard-grid mb-4">
+    <div class="glass-card" id="card-short">
+        <div class="insights-card-head">
+            <div>
+                <h2 id="short-title">Ngắn hạn</h2>
+                <div class="metric-change" id="short-subtitle">—</div>
+            </div>
+            <div id="short-status"></div>
+        </div>
+        <div class="insights-conclusion" id="short-conclusion">Đang tải…</div>
+        <div class="insights-badges" id="short-badges"></div>
+        <details class="insights-details" style="margin-top: 12px;">
+            <summary>Vì sao? (bằng chứng &amp; giới hạn)</summary>
+            <div id="short-evidence" style="margin-top: 8px; color: var(--text-secondary);"></div>
+        </details>
+    </div>
+
+    <div class="glass-card" id="card-mid">
+        <div class="insights-card-head">
+            <div>
+                <h2 id="mid-title">Trung hạn</h2>
+                <div class="metric-change" id="mid-subtitle">—</div>
+            </div>
+            <div id="mid-status"></div>
+        </div>
+        <div class="insights-conclusion" id="mid-conclusion">Đang tải…</div>
+        <div class="insights-badges" id="mid-badges"></div>
+        <details class="insights-details" style="margin-top: 12px;">
+            <summary>Vì sao? (bằng chứng &amp; giới hạn)</summary>
+            <div id="mid-evidence" style="margin-top: 8px; color: var(--text-secondary);"></div>
+        </details>
+    </div>
+
+    <div class="glass-card" id="card-long">
+        <div class="insights-card-head">
+            <div>
+                <h2 id="long-title">Dài hạn</h2>
+                <div class="metric-change" id="long-subtitle">—</div>
+            </div>
+            <div id="long-status"></div>
+        </div>
+        <div class="insights-conclusion" id="long-conclusion">Đang tải…</div>
+        <div class="insights-badges" id="long-badges"></div>
+        <details class="insights-details" style="margin-top: 12px;">
+            <summary>Vì sao? (bằng chứng &amp; giới hạn)</summary>
+            <div id="long-evidence" style="margin-top: 8px; color: var(--text-secondary);"></div>
+        </details>
+    </div>
+</div>
+
+<div class="glass-card">
+    <h2>Ghi chú</h2>
+    <ul style="margin: 10px 0 0 18px; color: var(--text-secondary);">
+        <li>Đây là thông tin về điều kiện thị trường, không phải khuyến nghị tài chính.</li>
+        <li>“Phiên” = một điểm dữ liệu theo ngày quan sát (sau khi canonicalize: mỗi ngày 1 observation theo ưu tiên nguồn).</li>
+        <li>Ngày nghỉ/lễ có thể thiếu dữ liệu; hệ thống sẽ tự minh bạch bằng “valid pairs”.</li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const LABELS = {
+  status: {
+    ready: 'ĐỦ DỮ LIỆU',
+    fallback: 'FALLBACK',
+    limited: 'CHƯA ĐỦ',
+  },
+  primary: {
+    IB_ON: 'IB ON',
+    IB_1W: 'IB 1W',
+    IB_1M: 'IB 1M',
+    YIELD_2Y: 'Lợi suất 2Y',
+    YIELD_5Y: 'Lợi suất 5Y',
+    YIELD_10Y: 'Lợi suất 10Y',
+  }
+};
+
+function fmtBps(v) {
+  if (v === null || v === undefined) return '--';
+  const n = Number(v);
+  if (Number.isNaN(n)) return '--';
+  const sign = n >= 0 ? '+' : '';
+  return `${sign}${n.toFixed(1)} bps`;
+}
+
+function confLabel(x) {
+  const n = Number(x);
+  if (Number.isNaN(n)) return '—';
+  if (n >= 0.8) return 'Cao';
+  if (n >= 0.5) return 'Vừa';
+  return 'Thấp';
+}
+
+function trendText(direction) {
+  if (direction === 'up') return '↑';
+  if (direction === 'down') return '↓';
+  return '→';
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function setHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+function safeJsonParse(text) {
+  try {
+    if (!text) return null;
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function pill(text, tone='muted') {
+  return `<span class="pill pill--${tone}">${text}</span>`;
+}
+
+function statusBadge(status) {
+  const s = String(status || 'limited').toLowerCase();
+  const label = LABELS.status[s] || String(status || '—').toUpperCase();
+  const tone = (s === 'ready') ? 'ok' : (s === 'fallback') ? 'warn' : 'muted';
+  return `<span class="status-badge status-${s}">${label}</span>${pill(s === 'fallback' ? 'dùng horizon ngắn hơn' : (s === 'limited' ? 'đang tích lũy dữ liệu' : ''))}`.replace('</span><span class="pill pill--muted"></span>', '</span>');
+}
+
+function renderEvidence(h) {
+  const ev = h.evidence || {};
+  const lim = (ev.limitations || []).map(x => `<li>${x}</li>`).join('');
+  const opt = (ev.optional_series || []).map(o => `<li>${o.id} (nguồn: ${o.source || 'unknown'})</li>`).join('');
+  const proxy = ev.term_premium_proxy
+    ? `<div style="margin-top: 8px;"><b>${ev.term_premium_proxy.label}:</b> ${(Number(ev.term_premium_proxy.value)||0).toFixed(3)}<br/><span style="color: var(--text-secondary); font-size: 0.9rem;">${ev.term_premium_proxy.note}</span></div>`
+    : '';
+
+  const oos = ev.oos ? (() => {
+    const m = ev.oos.metrics || {};
+    const vm = m.vmci_linear || {};
+    const rw = m.baseline_random_walk || {};
+    const mean = m.baseline_mean || {};
+    return `
+      <div style="margin-top: 10px;">
+        <b>OOS diagnostics (thông tin):</b> n=${ev.oos.n_oos}, Δ${ev.oos.horizon_phien} phiên
+        <ul style="margin: 6px 0 0 18px;">
+          <li>VMCI-linear: R²=${(vm.r2 ?? 0).toFixed(3)}, MAE=${(vm.mae ?? 0).toFixed(2)} bps</li>
+          <li>Random-walk: R²=${(rw.r2 ?? 0).toFixed(3)}, MAE=${(rw.mae ?? 0).toFixed(2)} bps</li>
+          <li>Mean baseline: R²=${(mean.r2 ?? 0).toFixed(3)}, MAE=${(mean.mae ?? 0).toFixed(2)} bps</li>
+        </ul>
+        <div style="color: var(--text-secondary); font-size: 0.9rem;">${ev.oos.note || ''}</div>
+      </div>
+    `;
+  })() : '';
+
+  const stress = h.stress_overlay && h.stress_overlay.active ? `
+    <div style="margin-top: 10px;">
+      <b>${h.stress_overlay.label}</b> (z=${Number(h.stress_overlay.stress_z).toFixed(2)}, method=${h.stress_overlay.method || 'std'})
+      <div style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 4px;">${h.stress_overlay.explanation || ''}</div>
+      <div style="color: var(--text-secondary); font-size: 0.95rem;">${h.stress_overlay.implication || ''}</div>
+    </div>
+  ` : '';
+
+  return `
+    <div><b>Primary:</b> ${ev.primary_series?.id || '—'} (nguồn: ${ev.primary_series?.source || 'unknown'}, as-of: ${ev.primary_series?.as_of || '—'})</div>
+    <div><b>Đang dùng:</b> Δ${ev.horizon_used || h.readiness?.horizon_used || '—'} phiên</div>
+    ${proxy}
+    ${stress}
+    ${oos}
+    <div style="margin-top: 8px;"><b>Optional series có sẵn:</b></div>
+    <ul style="margin: 6px 0 0 18px;">${opt || '<li>—</li>'}</ul>
+    <div style="margin-top: 8px;"><b>Limitations:</b></div>
+    <ul style="margin: 6px 0 0 18px;">${lim || '<li>—</li>'}</ul>
+  `;
+}
+
+function renderHorizon(key, h) {
+  const labels = h.labels || {};
+  setText(`${key}-title`, labels.title || key);
+  setText(`${key}-subtitle`, labels.subtitle || '—');
+
+  const readiness = h.readiness || {};
+  const primary = h.primary || {};
+  const status = h.status || '—';
+  const c = h.confidence || {};
+  const trend = h.trend || {};
+  const deltaBps = (trend.delta_bps === null || trend.delta_bps === undefined) ? null : Number(trend.delta_bps);
+  const compareH = trend.compare_horizon || readiness.horizon_used || '—';
+
+  setHtml(`${key}-status`, statusBadge(status));
+  setText(`${key}-conclusion`, h.conclusion || '—');
+
+  const primaryName = LABELS.primary[primary.id] || (primary.id || '—');
+  const valid = Number(readiness.valid_pairs || 0);
+  const req = Number(readiness.required_pairs || 0);
+  const missing = Math.max(0, req - valid);
+
+  const badges = [];
+  badges.push(pill(`Dữ liệu chính: ${primaryName}`, 'muted'));
+  badges.push(pill(`Nguồn: ${primary.source || 'unknown'}`, 'muted'));
+  badges.push(pill(`Δ${readiness.horizon_used || '—'} phiên`, 'muted'));
+  badges.push(pill(`${valid}/${req} cặp hợp lệ`, valid >= req ? 'ok' : 'warn'));
+  if (String(status).toLowerCase() === 'limited' && missing > 0) {
+    badges.push(pill(`Cần thêm ~${missing} cặp`, 'warn'));
+  }
+  badges.push(pill(`Tin cậy (Data): ${confLabel(c.data)}`, 'muted'));
+  badges.push(pill(`Tin cậy (Model): ${confLabel(c.model)}`, 'muted'));
+  if (deltaBps !== null) {
+    badges.push(pill(`${trendText(trend.direction)} Δ${compareH}: ${fmtBps(deltaBps)}`, 'muted'));
+  } else {
+    badges.push(pill(`Δ${compareH}: chưa đủ dữ liệu`, 'muted'));
+  }
+
+  setHtml(`${key}-badges`, badges.join(''));
+  setHtml(`${key}-evidence`, renderEvidence(h));
+}
+
+async function loadHorizons() {
+  try {
+    const res = await fetch('/api/insights/horizons');
+    const payload = await res.json();
+
+    const vmci = payload.vmci_overall || null;
+    if (vmci && (vmci.score !== null || vmci.bucket || vmci.meta)) {
+      const score = (vmci.score !== null && vmci.score !== undefined) ? Number(vmci.score).toFixed(1) : '—';
+      setText('vmciScore', score);
+
+      const metaObj = safeJsonParse(vmci.meta);
+      const bucket = vmci.bucket ? String(vmci.bucket) : null;
+      const bucketText = bucket ? `Bucket: ${bucket}` : 'Bucket: đang hiệu chỉnh';
+      const pills = [];
+      pills.push(pill(bucketText, bucket ? 'ok' : 'warn'));
+      if (metaObj) {
+        if (metaObj.n_train !== undefined && metaObj.min_n !== undefined) {
+          pills.push(pill(`Hiệu chỉnh: ${metaObj.n_train}/${metaObj.min_n} phiên`, (metaObj.n_train >= metaObj.min_n) ? 'ok' : 'warn'));
+        }
+        if (metaObj.lookback !== undefined) pills.push(pill(`Lookback: ${metaObj.lookback}`, 'muted'));
+        if (metaObj.z_method) pills.push(pill(`z: ${metaObj.z_method}`, 'muted'));
+      }
+      setHtml('vmciBucketRow', pills.join(''));
+
+      const note = metaObj && metaObj.note ? String(metaObj.note) : '—';
+      setText('vmciNote', note);
+      setHtml('vmciMeta', `<pre style="white-space: pre-wrap; word-break: break-word; margin: 0;">${vmci.meta ? vmci.meta : ''}</pre>`);
+    } else {
+      setText('vmciScore', '—');
+      setHtml('vmciBucketRow', pill('Chưa có VM‑CI tổng quan', 'muted'));
+      setText('vmciNote', '—');
+      setHtml('vmciMeta', '');
+    }
+
+    const horizons = payload.horizons || {};
+    renderHorizon('short', horizons.short || {});
+    renderHorizon('mid', horizons.mid || {});
+    renderHorizon('long', horizons.long || {});
+  } catch (e) {
+    console.error(e);
+    setText('short-conclusion', 'Không tải được dữ liệu.');
+    setText('mid-conclusion', 'Không tải được dữ liệu.');
+    setText('long-conclusion', 'Không tải được dữ liệu.');
+    setText('vmciScore', '—');
+    setText('vmciNote', 'Không tải được dữ liệu.');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadHorizons();
+});
+</script>
+{% endblock %}

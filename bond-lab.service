@@ -1,0 +1,42 @@
+[Unit]
+Description=VN Bond Lab - Vietnamese Bond Data Laboratory
+Documentation=https://github.com/yourusername/vn-bond-lab
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Working directory (adjust to your deployment path)
+WorkingDirectory=/opt/bond-lab
+
+# Environment file (adjust path if needed)
+EnvironmentFile=/opt/bond-lab/.env
+
+# Compose project name
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+ExecReload=/usr/bin/docker compose -f docker-compose.prod.yml restart
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Security hardening
+# No new privileges
+NoNewPrivileges=true
+
+# Private /tmp, /var/tmp, /dev, /sys
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/bond-lab/data /opt/bond-lab/logs
+
+# Resource limits (adjust based on your server)
+MemoryMax=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

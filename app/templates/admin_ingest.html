@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Data Ingestion{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Data Ingestion Control</h1>
+    <p>Manage data collection and backfill operations</p>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-card">
+        <h2>Daily Ingestion</h2>
+        <p class="mb-4">Fetch the latest data from all providers</p>
+        <button id="dailyBtn" class="btn btn-primary" onclick="runDaily()">
+            Run Daily Ingestion
+        </button>
+        <div id="dailyStatus" class="mt-4"></div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Backfill Data</h2>
+        <p class="mb-4">Fill in historical data for a date range</p>
+        <form id="backfillForm">
+            <div class="form-group">
+                <label for="startDate">Start Date</label>
+                <input type="date" id="startDate" name="start_date" required>
+            </div>
+            <div class="form-group">
+                <label for="endDate">End Date</label>
+                <input type="date" id="endDate" name="end_date" required>
+            </div>
+            <div class="form-group">
+                <label for="providers">Providers</label>
+                <select id="providers" name="providers" multiple>
+                    <option value="hnx_yield_curve">HNX Yield Curve</option>
+                    <option value="hnx_ftp_pdf">HNX FTP PDF</option>
+                    <option value="hnx_auction">HNX Auction</option>
+                    <option value="hnx_trading">HNX Secondary Trading</option>
+                    <option value="sbv_interbank">SBV Interbank</option>
+                    <option value="sbv_policy">SBV Policy Rates</option>
+                    <option value="abo">AsianBondsOnline</option>
+                    <option value="fred_global">FRED Global</option>
+                    <option value="lai_suat_rates">Lãi suất ngân hàng (Lai_suat)</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-secondary">Run Backfill</button>
+        </form>
+        <div id="backfillStatus" class="mt-4"></div>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <div class="flex-between">
+        <h2>Provider Status</h2>
+        <button class="btn btn-secondary" onclick="refreshProviderStatus()">Refresh</button>
+    </div>
+    <div id="providerStatusContent" class="mt-4">
+        <div class="loading"><div class="spinner"></div></div>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Recent Ingestion Runs</h2>
+    <div class="table-container">
+        <table id="ingestRunsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Provider</th>
+                    <th>Date Range</th>
+                    <th>Status</th>
+                    <th>Rows</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="7" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <button class="btn btn-secondary mt-4" onclick="loadIngestRuns()">Refresh</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runDaily() {
+    const btn = document.getElementById('dailyBtn');
+    const status = document.getElementById('dailyStatus');
+
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    status.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+    try {
+        const response = await fetch('/api/admin/ingest/daily', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'completed') {
+            let html = '<div class="status-badge status-completed">Completed</div>';
+            html += '<ul class="mt-4">';
+            for (const [provider, result] of Object.entries(data.results)) {
+                const statusClass = result.status === 'completed' ? 'status-completed' : 'status-failed';
+                html += `<li>${provider}: <span class="status-badge ${statusClass}">${result.status}</span> (${result.rows_inserted} rows)</li>`;
+            }
+            html += '</ul>';
+            status.innerHTML = html;
+
+            // Refresh table
+            loadIngestRuns();
+        } else {
+            status.innerHTML = '<div class="status-badge status-failed">Failed</div>';
+        }
+    } catch (error) {
+        console.error('Error running daily ingestion:', error);
+        status.innerHTML = '<div class="status-badge status-failed">Error: ' + error.message + '</div>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Daily Ingestion';
+    }
+}
+
+async function runBackfill(event) {
+    event.preventDefault();
+
+    const form = event.target;
+    const formData = new FormData(form);
+    const startDate = formData.get('start_date');
+    const endDate = formData.get('end_date');
+
+    // Get selected providers
+    const providersSelect = document.getElementById('providers');
+    const selectedProviders = Array.from(providersSelect.selectedOptions).map(opt => opt.value);
+
+    if (!selectedProviders.length) {
+        alert('Please select at least one provider');
+        return;
+    }
+
+    const status = document.getElementById('backfillStatus');
+    status.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+    try {
+        const params = new URLSearchParams({
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        selectedProviders.forEach(p => params.append('providers', p));
+
+        const response = await fetch(`/api/admin/ingest/backfill?${params}`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'completed') {
+            let html = '<div class="status-badge status-completed">Completed</div>';
+            html += '<ul class="mt-4">';
+            for (const [provider, result] of Object.entries(data.results)) {
+                const statusClass = result.status === 'completed' ? 'status-completed' : 'status-failed';
+                html += `<li>${provider}: <span class="status-badge ${statusClass}">${result.status}</span> (${result.rows_inserted} rows)</li>`;
+            }
+            html += '</ul>';
+            status.innerHTML = html;
+
+            // Refresh table
+            loadIngestRuns();
+        } else {
+            status.innerHTML = '<div class="status-badge status-failed">Failed</div>';
+        }
+    } catch (error) {
+        console.error('Error running backfill:', error);
+        status.innerHTML = '<div class="status-badge status-failed">Error: ' + error.message + '</div>';
+    }
+}
+
+async function loadIngestRuns() {
+    try {
+        const response = await fetch('/api/admin/ingest-runs?limit=50');
+        const data = await response.json();
+
+        const tbody = document.querySelector('#ingestRunsTable tbody');
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No ingestion runs found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.map(r => {
+            const startedAt = new Date(r.started_at);
+            const endedAt = r.ended_at ? new Date(r.ended_at) : null;
+            const duration = endedAt ? Math.round((endedAt - startedAt) / 1000) : null;
+
+            return `
+                <tr>
+                    <td>${r.id}</td>
+                    <td>${r.provider}</td>
+                    <td>${r.start_date || 'N/A'} - ${r.end_date || 'N/A'}</td>
+                    <td><span class="status-badge status-${r.status}">${r.status}</span></td>
+                    <td>${r.rows_inserted || 0}</td>
+                    <td>${startedAt.toLocaleString()}</td>
+                    <td>${duration ? duration + 's' : 'N/A'}</td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error('Error loading ingest runs:', error);
+        document.querySelector('#ingestRunsTable tbody').innerHTML =
+            '<tr><td colspan="7" class="text-center">Error loading data</td></tr>';
+    }
+}
+
+async function loadProviderStatus() {
+    try {
+        const response = await fetch('/api/admin/provider-status');
+        const data = await response.json();
+
+        const content = document.getElementById('providerStatusContent');
+
+        if (data.status === 'no_probe_data') {
+            content.innerHTML = `
+                <div class="text-center">
+                    <p class="mb-4">${data.message}</p>
+                    <button class="btn btn-primary" onclick="runProbe()">Run Provider Probe</button>
+                </div>
+            `;
+            return;
+        }
+
+        if (data.status !== 'ok') {
+            content.innerHTML = '<p class="text-center">Error loading provider status</p>';
+            return;
+        }
+
+        // Build provider status table
+        let html = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Fetch Latest</th>
+                            <th>Historical</th>
+                            <th>Backfill</th>
+                            <th>Earliest Success</th>
+                            <th>Latest Success</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        const providerNames = {
+            'hnx_yield_curve': 'HNX Yield Curve',
+            'hnx_ftp_pdf': 'HNX FTP PDF',
+            'sbv_interbank': 'SBV Interbank',
+            'abo': 'AsianBondsOnline'
+        };
+
+        for (const [providerId, status] of Object.entries(data.providers)) {
+            const latestBadge = status.fetch_latest
+                ? '<span class="status-badge status-completed">✓</span>'
+                : '<span class="status-badge status-failed">✗</span>';
+
+            const historicalBadge = status.fetch_historical
+                ? '<span class="status-badge status-completed">✓</span>'
+                : '<span class="status-badge status-failed">✗</span>';
+
+            const backfillBadge = status.backfill_supported
+                ? '<span class="status-badge status-completed">✓</span>'
+                : '<span class="status-badge status-failed">✗</span>';
+
+            const notes = status.failure_modes.length > 0
+                ? status.failure_modes.join(', ')
+                : 'Operating normally';
+
+            html += `
+                <tr>
+                    <td><strong>${providerNames[providerId] || providerId}</strong></td>
+                    <td>${latestBadge}</td>
+                    <td>${historicalBadge}</td>
+                    <td>${backfillBadge}</td>
+                    <td>${status.earliest_success_date || 'N/A'}</td>
+                    <td>${status.latest_success_date || 'N/A'}</td>
+                    <td><small>${notes}</small></td>
+                </tr>
+            `;
+        }
+
+        html += `
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-4" style="color: var(--text-secondary);">
+                <small>Last probe: ${new Date(data.probe_timestamp).toLocaleString()}</small>
+            </p>
+        `;
+
+        content.innerHTML = html;
+
+    } catch (error) {
+        console.error('Error loading provider status:', error);
+        document.getElementById('providerStatusContent').innerHTML =
+            '<p class="text-center">Error loading provider status</p>';
+    }
+}
+
+function refreshProviderStatus() {
+    loadProviderStatus();
+}
+
+async function runProbe() {
+    const content = document.getElementById('providerStatusContent');
+    content.innerHTML = '<div class="loading"><div class="spinner"></div></div><p class="text-center mt-4">Running provider probe... (this may take a minute)</p>';
+
+    try {
+        const response = await fetch('/api/admin/ingest/probe', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'completed') {
+            content.innerHTML = '<p class="text-center">Probe completed! Refreshing status...</p>';
+            setTimeout(() => loadProviderStatus(), 1000);
+        } else {
+            content.innerHTML = '<p class="text-center">Probe failed</p>';
+        }
+    } catch (error) {
+        console.error('Error running probe:', error);
+        content.innerHTML = '<p class="text-center">Error running probe: ' + error.message + '</p>';
+    }
+}
+
+// Set default dates for backfill
+document.addEventListener('DOMContentLoaded', () => {
+    const today = new Date();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    document.getElementById('endDate').value = today.toISOString().split('T')[0];
+    document.getElementById('startDate').value = thirtyDaysAgo.toISOString().split('T')[0];
+
+    // Load initial data
+    loadIngestRuns();
+    loadProviderStatus();
+});
+
+// Form submission
+document.getElementById('backfillForm').addEventListener('submit', runBackfill);
+</script>
+{% endblock %}

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vn-bond-lab-prod
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist database and raw data
+      - ./data:/app/data
+      # Persist logs
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Optional reverse proxy labels (e.g., for Traefik)
+    # Uncomment if using a reverse proxy for HTTPS/SSL termination
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.bond-lab.rule=Host(`your-domain.com`)"
+    #   - "traefik.http.routers.bond-lab.entrypoints=websecure"
+    #   - "traefik.http.routers.bond-lab.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.bond-lab.loadbalancer.server.port=8000"
+    # Logging configuration for production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  data:
+  logs:

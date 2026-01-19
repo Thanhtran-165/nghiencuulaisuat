@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Interbank Rates - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Interbank Interest Rates</h1>
+    <p>View historical interbank rate trends</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Filter Options</h2>
+        <form id="filterForm" class="flex gap-4">
+            <div class="form-group" style="margin-bottom: 0;">
+                <select id="tenorInput" name="tenor">
+                    <option value="">All Tenors</option>
+                    <option value="ON">Overnight (ON)</option>
+                    <option value="1W">1 Week</option>
+                    <option value="2W">2 Weeks</option>
+                    <option value="1M">1 Month</option>
+                    <option value="3M">3 Months</option>
+                    <option value="6M">6 Months</option>
+                    <option value="9M">9 Months</option>
+                    <option value="12M">12 Months</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </form>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Historical Rates</h2>
+    <div class="chart-container">
+        <canvas id="interbankChart"></canvas>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Recent Rates</h2>
+    <div class="table-container">
+        <table id="interbankTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Tenor</th>
+                    <th>Rate (%)</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="4" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let interbankChart = null;
+
+async function loadInterbankChart(tenor = '3M') {
+    try {
+        // Get last 365 days of data (useful once backfilled)
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        let url = `/api/interbank/timeseries?start_date=${startDate}&end_date=${endDate}`;
+        if (tenor) {
+            url += `&tenor=${tenor}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        // Update chart
+        updateChart(data, tenor);
+
+    } catch (error) {
+        console.error('Error loading interbank data:', error);
+    }
+}
+
+async function loadLatestInterbankTable() {
+    const tbody = document.querySelector('#interbankTable tbody');
+    try {
+        const response = await fetch('/api/interbank/latest');
+        const data = await response.json();
+        updateTable(data);
+    } catch (error) {
+        console.error('Error loading latest interbank rates:', error);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Error loading data</td></tr>';
+    }
+}
+
+function updateTable(data) {
+    const tbody = document.querySelector('#interbankTable tbody');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">No data</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map(d => `
+        <tr>
+            <td>${d.date}</td>
+            <td>${d.tenor_label}</td>
+            <td>${(typeof d.rate === 'number' ? d.rate : Number(d.rate)).toFixed(2)}%</td>
+            <td>${d.source}</td>
+        </tr>
+    `).join('');
+}
+
+function updateChart(data, tenor) {
+    // Group data by tenor (or single tenor when filter applied)
+    const tenors = [...new Set(data.map(d => d.tenor_label))].sort();
+    const datasets = [];
+
+    const colors = {
+        'ON': '#667eea',
+        '1W': '#764ba2',
+        '2W': '#10b981',
+        '1M': '#ffd54f',
+        '3M': '#ff8a65',
+        '6M': '#ea80fc',
+        '9M': '#60a5fa',
+        '12M': '#34d399'
+    };
+
+    tenors.forEach(t => {
+        const tenorData = data.filter(d => d.tenor_label === t).sort((a, b) =>
+            new Date(a.date) - new Date(b.date)
+        );
+
+        datasets.push({
+            label: t,
+            data: tenorData.map(d => ({
+                x: d.date,
+                y: d.rate
+            })),
+            borderColor: colors[t] || '#374151',
+            backgroundColor: (colors[t] || '#374151') + '20',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.4,
+            pointRadius: 4
+        });
+    });
+
+    if (interbankChart) {
+        interbankChart.destroy();
+    }
+
+    interbankChart = new Chart(document.getElementById('interbankChart'), {
+        type: 'line',
+        data: {
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        font: { size: 14 }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'category',
+                    grid: {},
+                    ticks: {}
+                },
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Form submission handler
+document.getElementById('filterForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const tenor = document.getElementById('tenorInput').value;
+    // Chart can be filtered; Recent table always shows all tenors for latest date
+    loadInterbankChart(tenor || '');
+});
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Default to 3M as the most common reference tenor
+    document.getElementById('tenorInput').value = '3M';
+    loadLatestInterbankTable();
+    loadInterbankChart('3M');
+});
+</script>
+{% endblock %}

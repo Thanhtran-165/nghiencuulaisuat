@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Data Quality - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h2>Data Quality Dashboard</h2>
+            <p class="text-muted">Monitor data quality gates and validation results</p>
+
+            <!-- Controls -->
+            <div class="mb-3">
+                <input type="date" class="form-control d-inline-block" id="target-date" style="width: auto;">
+                <button class="btn btn-primary" onclick="loadDQStatus()">
+                    <i class="fas fa-search"></i> Load Status
+                </button>
+                <button class="btn btn-success" onclick="runDQNow()">
+                    <i class="fas fa-play"></i> Run DQ Now
+                </button>
+                <button class="btn btn-secondary" onclick="loadRecentResults()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+
+            <!-- DQ Status Card -->
+            <div class="card mb-4" id="dq-status-card">
+                <div class="card-header">
+                    <h5>Data Quality Status</h5>
+                </div>
+                <div class="card-body">
+                    <div id="dq-status-content">
+                        <p class="text-muted">Select a date to view DQ status</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Table -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>Recent DQ Results (Last 30 Days)</h5>
+                    <div>
+                        <select class="form-control d-inline-block" id="filter-dataset" onchange="loadRecentResults()" style="width: auto;">
+                            <option value="">All Datasets</option>
+                            <option value="gov_yield_curve">Yield Curve</option>
+                            <option value="interbank_rates">Interbank Rates</option>
+                            <option value="gov_auction_results">Auctions</option>
+                            <option value="gov_secondary_trading">Secondary Trading</option>
+                            <option value="policy_rates">Policy Rates</option>
+                        </select>
+                        <select class="form-control d-inline-block" id="filter-severity" onchange="loadRecentResults()" style="width: auto;">
+                            <option value="">All Severities</option>
+                            <option value="ERROR">ERROR</option>
+                            <option value="WARN">WARN</option>
+                            <option value="INFO">INFO</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped" id="results-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Dataset</th>
+                                    <th>Rule</th>
+                                    <th>Severity</th>
+                                    <th>Passed</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="6" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Set default date to today
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('target-date').value = today;
+    loadDQStatus();
+    loadRecentResults();
+});
+
+function loadDQStatus() {
+    const date = document.getElementById('target-date').value;
+    if (!date) {
+        alert('Please select a date');
+        return;
+    }
+
+    fetch(`/api/admin/quality/latest?date=${date}`)
+        .then(response => response.json())
+        .then(data => {
+            renderDQStatus(data);
+        })
+        .catch(error => {
+            console.error('Error loading DQ status:', error);
+            showError('Failed to load DQ status');
+        });
+}
+
+function renderDQStatus(data) {
+    const content = document.getElementById('dq-status-content');
+
+    if (data.status === 'NOT_RUN') {
+        content.innerHTML = `
+            <div class="alert alert-secondary">
+                <h6><i class="fas fa-minus-circle"></i> Not Run</h6>
+                <p>No DQ run found for ${data.target_date}</p>
+                <button class="btn btn-primary btn-sm" onclick="runDQNow()">Run DQ Now</button>
+            </div>
+        `;
+        return;
+    }
+
+    const statusColors = {
+        'PASS': 'success',
+        'WARN': 'warning',
+        'FAIL': 'danger'
+    };
+
+    const statusIcons = {
+        'PASS': 'check-circle',
+        'WARN': 'exclamation-triangle',
+        'FAIL': 'times-circle'
+    };
+
+    const color = statusColors[data.status] || 'secondary';
+    const icon = statusIcons[data.status] || 'question-circle';
+
+    const summary = data.summary || {};
+
+    content.innerHTML = `
+        <div class="alert alert-${color}">
+            <h6><i class="fas fa-${icon}"></i> Status: ${data.status}</h6>
+            <div class="row mt-3">
+                <div class="col-md-3">
+                    <strong>Target Date:</strong><br>
+                    ${data.target_date}
+                </div>
+                <div class="col-md-3">
+                    <strong>Run Time:</strong><br>
+                    ${data.run_at}
+                </div>
+                <div class="col-md-3">
+                    <strong>Rules Checked:</strong><br>
+                    ${summary.total_rules_checked || 0}
+                </div>
+                <div class="col-md-3">
+                    <strong>Should Block:</strong><br>
+                    ${data.should_block ? 'Yes (ERROR)' : 'No'}
+                </div>
+            </div>
+            <hr>
+            <div class="row">
+                <div class="col-md-4">
+                    <span class="badge badge-success">INFO: ${summary.info_count || 0}</span>
+                </div>
+                <div class="col-md-4">
+                    <span class="badge badge-warning">WARN: ${summary.warn_count || 0}</span>
+                </div>
+                <div class="col-md-4">
+                    <span class="badge badge-danger">ERROR: ${summary.error_count || 0}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function loadRecentResults() {
+    const dataset = document.getElementById('filter-dataset').value;
+    const severity = document.getElementById('filter-severity').value;
+
+    const params = new URLSearchParams();
+    if (dataset) params.append('dataset_id', dataset);
+    if (severity) params.append('severity', severity);
+    params.append('limit', '100');
+
+    fetch(`/api/admin/quality/results?${params}`)
+        .then(response => response.json())
+        .then(data => {
+            renderResultsTable(data);
+        })
+        .catch(error => {
+            console.error('Error loading DQ results:', error);
+            showError('Failed to load DQ results');
+        });
+}
+
+function renderResultsTable(results) {
+    const tbody = document.querySelector('#results-table tbody');
+    tbody.innerHTML = '';
+
+    if (!results || results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No results found</td></tr>';
+        return;
+    }
+
+    results.forEach(result => {
+        const severityBadge = {
+            'ERROR': 'danger',
+            'WARN': 'warning',
+            'INFO': 'info'
+        }[result.severity] || 'secondary';
+
+        const passedBadge = result.passed
+            ? '<span class="badge badge-success">PASS</span>'
+            : '<span class="badge badge-danger">FAIL</span>';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${result.target_date}</td>
+            <td><code>${result.dataset_id}</code></td>
+            <td><code>${result.rule_code}</code></td>
+            <td><span class="badge badge-${severityBadge}">${result.severity}</span></td>
+            <td>${passedBadge}</td>
+            <td><small>${result.message}</small></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function runDQNow() {
+    const date = document.getElementById('target-date').value;
+    if (!date) {
+        alert('Please select a date');
+        return;
+    }
+
+    if (!confirm(`Run DQ checks for ${date}? This may take a moment.`)) {
+        return;
+    }
+
+    const button = event.target;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+
+    fetch(`/api/admin/quality/run?date=${date}`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-play"></i> Run DQ Now';
+
+        renderDQStatus({
+            target_date: date,
+            run_at: new Date().toISOString(),
+            status: data.status,
+            should_block: data.should_block,
+            summary: data.summary
+        });
+
+        loadRecentResults();
+
+        if (data.status === 'PASS') {
+            alert('DQ checks passed!');
+        } else if (data.status === 'WARN') {
+            alert(`DQ checks passed with ${data.summary.warn_count} warning(s)`);
+        } else {
+            alert(`DQ checks FAILED with ${data.summary.error_count} error(s)`);
+        }
+    })
+    .catch(error => {
+        console.error('Error running DQ:', error);
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-play"></i> Run DQ Now';
+        showError('Failed to run DQ checks');
+    });
+}
+
+function showError(message) {
+    alert(message);
+}
+</script>
+
+<style>
+.form-control.d-inline-block {
+    display: inline-block;
+    width: auto;
+}
+</style>
+{% endblock %}

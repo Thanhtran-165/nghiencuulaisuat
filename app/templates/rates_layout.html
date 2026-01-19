@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Lãi suất - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Lãi suất</h1>
+    <p>Theo dõi lãi suất ngân hàng (tiền gửi/cho vay) và dùng máy tính mô phỏng.</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex gap-4">
+        <a class="btn {% if rates_tab == 'today' %}btn-primary{% else %}btn-secondary{% endif %}" href="/rates">Hôm nay</a>
+        <a class="btn {% if rates_tab == 'history' %}btn-primary{% else %}btn-secondary{% endif %}" href="/rates/history">Lịch sử</a>
+        <a class="btn {% if rates_tab == 'compare' %}btn-primary{% else %}btn-secondary{% endif %}" href="/rates/compare">So sánh</a>
+        <a class="btn {% if rates_tab == 'calculator' %}btn-primary{% else %}btn-secondary{% endif %}" href="/rates/calculator">Máy tính</a>
+        <a class="btn btn-secondary" href="/admin/lai-suat">Cập nhật dữ liệu</a>
+    </div>
+    <div class="mt-4">
+        <span class="pill">Nguồn: Lai_suat → bảng <code>bank_rates</code></span>
+    </div>
+</div>
+
+{% block rates_content %}{% endblock %}
+{% endblock %}
+

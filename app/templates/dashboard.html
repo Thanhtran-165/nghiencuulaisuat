@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Vietnamese Bond Market Dashboard</h1>
+    <p>Real-time government bond yields and interbank rates</p>
+</div>
+
+	<div class="dashboard-grid">
+	    <div class="glass-card metric-card">
+	        <div class="metric-label">2-Year Yield</div>
+	        <div class="metric-value">
+	            {% if two_y %}{{ "%.2f"|format(two_y) }}%{% else %}--{% endif %}
+	        </div>
+	        <div class="metric-change">Government Bond</div>
+	    </div>
+
+    <div class="glass-card metric-card">
+        <div class="metric-label">5-Year Yield</div>
+        <div class="metric-value">
+            {% if five_y %}{{ "%.2f"|format(five_y) }}%{% else %}--{% endif %}
+        </div>
+        <div class="metric-change">Government Bond</div>
+    </div>
+
+    <div class="glass-card metric-card">
+        <div class="metric-label">10-Year Yield</div>
+        <div class="metric-value">
+            {% if ten_y %}{{ "%.2f"|format(ten_y) }}%{% else %}--{% endif %}
+        </div>
+        <div class="metric-change">Government Bond</div>
+    </div>
+
+    <div class="glass-card metric-card">
+        <div class="metric-label">10Y-2Y Spread</div>
+        <div class="metric-value">
+            {% if spread_10y_2y %}{{ "%+.2f"|format(spread_10y_2y) }}{% else %}--{% endif %}
+        </div>
+        <div class="metric-change {% if spread_10y_2y and spread_10y_2y > 0 %}positive{% elif spread_10y_2y and spread_10y_2y < 0 %}negative{% endif %}">
+            {% if spread_10y_2y %}
+                {% if spread_10y_2y > 0 %}Steepening{% else %}Flattening{% endif %}
+            {% else %}
+                Yield Curve
+            {% endif %}
+        </div>
+    </div>
+
+	    <div class="glass-card metric-card">
+	        <div class="metric-label">ON Rate</div>
+	        <div class="metric-value">
+	            {% if on_rate %}{{ "%.2f"|format(on_rate) }}%{% else %}--{% endif %}
+	        </div>
+	        <div class="metric-change">Interbank</div>
+	    </div>
+
+	    <div class="glass-card metric-card">
+	        <div class="metric-label">Lãi suất gửi TB (12T)</div>
+	        <div class="metric-value">
+	            {% if deposit_avg_12m %}{{ "%.2f"|format(deposit_avg_12m) }}%{% else %}--{% endif %}
+	        </div>
+	        <div class="metric-change">Bank Rates</div>
+	    </div>
+
+	    <div class="glass-card metric-card">
+	        <div class="metric-label">Lãi suất vay TB</div>
+	        <div class="metric-value">
+	            {% if loan_avg %}{{ "%.2f"|format(loan_avg) }}%{% else %}--{% endif %}
+	        </div>
+	        <div class="metric-change">Bank Rates</div>
+	    </div>
+	</div>
+
+<div class="glass-card">
+    <h2>Latest Yield Curve</h2>
+    <div class="chart-container">
+        <canvas id="yieldCurveChart"></canvas>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Interbank Rates</h2>
+    <div class="metric-change" id="interbankMeta">Loading...</div>
+    <div class="chart-container">
+        <canvas id="interbankChart"></canvas>
+    </div>
+    <div class="table-container mt-4">
+        <table id="interbankCompareTable">
+            <thead>
+                <tr>
+                    <th>Kỳ hạn</th>
+                    <th id="interbankThToday">Hôm nay</th>
+                    <th id="interbankThPrev">Hôm trước</th>
+                    <th>Thay đổi (bps)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="4" class="text-center">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Fetch latest yield curve data and render chart
+async function loadYieldCurve() {
+    try {
+        const response = await fetch('/api/yield-curve/latest');
+        const data = await response.json();
+
+        const labels = data.map(d => d.tenor_label);
+        const yields = data.map(d => d.spot_rate_annual);
+
+        new Chart(document.getElementById('yieldCurveChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Yield (%)',
+                    data: yields,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.12)',
+                    borderWidth: 3,
+	                    fill: true,
+	                    tension: 0.4,
+	                    pointRadius: 6,
+	                    pointBackgroundColor: '#667eea',
+	                    pointBorderColor: '#111827',
+	                    pointBorderWidth: 2
+	                }]
+	            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {},
+                        ticks: {}
+                    },
+                    y: {
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error loading yield curve:', error);
+    }
+}
+
+// Fetch latest interbank rates and render chart
+async function loadInterbankRates() {
+    try {
+        const response = await fetch('/api/interbank/compare');
+        const payload = await response.json();
+
+        const rows = payload.rows || [];
+        const tenors = rows.map(r => r.tenor_label);
+        const todayRates = rows.map(r => r.today_rate);
+        const prevRates = rows.map(r => r.prev_rate);
+        const todayMissing = rows.map(r => r.today_rate === null || r.today_rate === undefined);
+        const prevMissing = rows.map(r => r.prev_rate === null || r.prev_rate === undefined);
+
+        const todayDate = payload.today_date ? new Date(payload.today_date).toLocaleDateString('vi-VN') : '—';
+        const prevDate = payload.prev_date ? new Date(payload.prev_date).toLocaleDateString('vi-VN') : '—';
+        document.getElementById('interbankMeta').textContent = `Hôm nay: ${todayDate} | Hôm qua: ${prevDate}`;
+        const thToday = document.getElementById('interbankThToday');
+        const thPrev = document.getElementById('interbankThPrev');
+        if (thToday) thToday.textContent = `Hôm nay (${todayDate})`;
+        if (thPrev) thPrev.textContent = `Hôm qua (${prevDate})`;
+
+        // Table: today vs previous
+        const tbody = document.querySelector('#interbankCompareTable tbody');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Không có dữ liệu.</td></tr>';
+        } else {
+            const fmt = (v) => (v === null || v === undefined) ? '--' : Number(v).toFixed(2) + '%';
+            const fmtBps = (v) => (v === null || v === undefined) ? '--' : (v >= 0 ? '+' : '') + Number(v).toFixed(1);
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td>${r.tenor_label}</td>
+                    <td>${fmt(r.today_rate)}</td>
+                    <td>${fmt(r.prev_rate)}</td>
+                    <td>${fmtBps(r.change_bps)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Chart: grouped bars (today vs previous)
+        // Chart.js skips bars with null; to keep layout stable, render missing values as 0
+        // and show a "Chưa có dữ liệu" tooltip + grey styling.
+        const todayChartValues = todayRates.map(v => (v === null || v === undefined) ? 0 : v);
+        const prevChartValues = prevRates.map(v => (v === null || v === undefined) ? 0 : v);
+        const colorToday = rows.map((_, idx) =>
+            todayMissing[idx] ? 'rgba(148, 163, 184, 0.25)' : 'rgba(118, 75, 162, 0.35)'
+        );
+        const colorPrev = rows.map((_, idx) =>
+            prevMissing[idx] ? 'rgba(148, 163, 184, 0.18)' : 'rgba(102, 126, 234, 0.25)'
+        );
+        const borderToday = rows.map((_, idx) => todayMissing[idx] ? '#94a3b8' : '#764ba2');
+        const borderPrev = rows.map((_, idx) => prevMissing[idx] ? '#94a3b8' : '#667eea');
+
+        new Chart(document.getElementById('interbankChart'), {
+            type: 'bar',
+            data: {
+                labels: tenors,
+                datasets: [{
+                    label: `Hôm nay (${todayDate})`,
+                    data: todayChartValues,
+                    backgroundColor: colorToday,
+                    borderColor: borderToday,
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    minBarLength: 3,
+                },{
+                    label: `Hôm qua (${prevDate})`,
+                    data: prevChartValues,
+                    backgroundColor: colorPrev,
+                    borderColor: borderPrev,
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    minBarLength: 3,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            font: { size: 14 }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const idx = context.dataIndex;
+                                const ds = context.datasetIndex;
+                                const isMissing = (ds === 0) ? todayMissing[idx] : prevMissing[idx];
+                                if (isMissing) return `${context.dataset.label}: Chưa có dữ liệu`;
+                                const v = context.parsed.y;
+                                return `${context.dataset.label}: ${Number(v).toFixed(2)}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {},
+                        ticks: {}
+                    },
+                    y: {
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error loading interbank rates:', error);
+    }
+}
+
+// Load data when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    loadYieldCurve();
+    loadInterbankRates();
+});
+</script>
+{% endblock %}

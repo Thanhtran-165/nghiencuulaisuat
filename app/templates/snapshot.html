@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+
+{% block title %}Snapshot Hàng Ngày - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Snapshot Hàng Ngày</h1>
+    <p>Thị trường trái phiếu chính phủ Việt Nam</p>
+</div>
+
+{% if snapshot %}
+<div class="glass-card mb-4">
+    <div class="snapshot-date">
+        <h2>{{ snapshot.date }}</h2>
+    </div>
+</div>
+
+<!-- Tóm tắt -->
+<div class="glass-card summary-card mb-4">
+    <h2>Tóm Tắt</h2>
+    <div class="summary-grid">
+        <div class="summary-item">
+            <div class="summary-label">Điểm Số Truyền Dẫn</div>
+            <div class="summary-value score-{{ 'high' if snapshot.tom_tat.diem_so >= 60 else 'medium' if snapshot.tom_tat.diem_so >= 40 else 'low' }}">
+                {{ "%.1f"|format(snapshot.tom_tat.diem_so) if snapshot.tom_tat.diem_so else '--' }}/100
+            </div>
+        </div>
+
+        <div class="summary-item">
+            <div class="summary-label">Nhóm</div>
+            <div class="summary-value regime-{{ snapshot.tom_tat.nhom }}">
+                {{ snapshot.tom_tat.nhom if snapshot.tom_tat.nhom else 'N/A' }}
+            </div>
+        </div>
+
+        <div class="summary-item">
+            <div class="summary-label">Lãi Suất 10N</div>
+            <div class="summary-value">
+                {{ "%.2f"|format(snapshot.tom_tat.lai_suat_10y) + '%' if snapshot.tom_tat.lai_suat_10y else '--' }}
+            </div>
+        </div>
+
+        <div class="summary-item">
+            <div class="summary-label">Lãi Suất Qua Đêm O/N</div>
+            <div class="summary-value">
+                {{ "%.2f"|format(snapshot.tom_tat.lai_suat_qua_dem) + '%' if snapshot.tom_tat.lai_suat_qua_dem else '--' }}
+            </div>
+        </div>
+    </div>
+
+    <div class="summary-description">
+        {{ snapshot.tom_tat.mo_ta }}
+    </div>
+</div>
+
+<!-- So với hôm qua -->
+<div class="glass-card mb-4">
+    <h2>So Với Hôm Qua</h2>
+    <div class="comparison-table">
+        {% if snapshot.so_voi_hom_qua.diem_so %}
+        <div class="comparison-row">
+            <div class="comparison-label">Điểm số truyền dẫn</div>
+            <div class="comparison-current">{{ "%.1f"|format(snapshot.so_voi_hom_qua.diem_so.hien_tai) }}</div>
+            <div class="comparison-change {{ 'positive' if snapshot.so_voi_hom_qua.diem_so.thay_doi > 0 else 'negative' if snapshot.so_voi_hom_qua.diem_so.thay_doi < 0 else 'neutral' }}">
+                {{ "%+.1f"|format(snapshot.so_voi_hom_qua.diem_so.thay_doi) }} ({{ snapshot.so_voi_hom_qua.diem_so.xu_huong }})
+            </div>
+        </div>
+        {% endif %}
+
+        {% if snapshot.so_voi_hom_qua.lai_suat_10y %}
+        <div class="comparison-row">
+            <div class="comparison-label">Lãi suất 10N</div>
+            <div class="comparison-current">{{ "%.2f"|format(snapshot.so_voi_hom_qua.lai_suat_10y.hien_tai) }}%</div>
+            <div class="comparison-change {{ 'positive' if snapshot.so_voi_hom_qua.lai_suat_10y.thay_doi > 0 else 'negative' if snapshot.so_voi_hom_qua.lai_suat_10y.thay_doi < 0 else 'neutral' }}">
+                {{ "%+.2f"|format(snapshot.so_voi_hom_qua.lai_suat_10y.thay_doi) }}% ({{ snapshot.so_voi_hom_qua.lai_suat_10y.xu_huong }})
+            </div>
+        </div>
+        {% endif %}
+
+        {% if snapshot.so_voi_hom_qua.lai_suat_qua_dem %}
+        <div class="comparison-row">
+            <div class="comparison-label">Lãi suất qua đêm O/N</div>
+            <div class="comparison-current">{{ "%.2f"|format(snapshot.so_voi_hom_qua.lai_suat_qua_dem.hien_tai) }}%</div>
+            <div class="comparison-change {{ 'positive' if snapshot.so_voi_hom_qua.lai_suat_qua_dem.thay_doi > 0 else 'negative' if snapshot.so_voi_hom_qua.lai_suat_qua_dem.thay_doi < 0 else 'neutral' }}">
+                {{ "%+.2f"|format(snapshot.so_voi_hom_qua.lai_suat_qua_dem.thay_doi) }}% ({{ snapshot.so_voi_hom_qua.lai_suat_qua_dem.xu_huong }})
+            </div>
+        </div>
+        {% endif %}
+
+        {% if snapshot.so_voi_hom_qua.do_cong %}
+        <div class="comparison-row">
+            <div class="comparison-label">Độ cong 10Y-2Y</div>
+            <div class="comparison-current">{{ "%.2f"|format(snapshot.so_voi_hom_qua.do_cong.hien_tai) }}%</div>
+            <div class="comparison-change {{ 'positive' if snapshot.so_voi_hom_qua.do_cong.thay_doi > 0 else 'negative' if snapshot.so_voi_hom_qua.do_cong.thay_doi < 0 else 'neutral' }}">
+                {{ "%+.2f"|format(snapshot.so_voi_hom_qua.do_cong.thay_doi) }}% ({{ snapshot.so_voi_hom_qua.do_cong.xu_huong }})
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Diễn giải -->
+<div class="glass-card mb-4">
+    <h2>Diễn Giải</h2>
+    <div class="insights-list">
+        {% for insight in snapshot.dien_giai %}
+        <div class="insight-item">
+            <span class="insight-bullet">•</span>
+            <span class="insight-text">{{ insight }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Watchlist -->
+<div class="glass-card mb-4">
+    <h2>Watchlist - Cần Theo Dõi</h2>
+    {% if snapshot.watchlist %}
+    <div class="watchlist-table">
+        <table class="watchlist-table-inner">
+            <thead>
+                <tr>
+                    <th>Loại</th>
+                    <th>Mức Độ</th>
+                    <th>Nội Dung</th>
+                    <th>Ngày</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in snapshot.watchlist %}
+                <tr>
+                    <td>{{ item.loai }}</td>
+                    <td class="severity-{{ item.muc_do.lower() }}">{{ item.muc_do }}</td>
+                    <td>{{ item.noi_dung }}</td>
+                    <td>{{ item.ngay }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>Không có mục cảnh báo nào.</p>
+    {% endif %}
+</div>
+
+<!-- Ghi chú -->
+<div class="glass-card notes-card">
+    <h2>Ghi Chú</h2>
+    <div class="notes-list">
+        {% for note in snapshot.ghi_chu %}
+        <div class="note-item">{{ note }}</div>
+        {% endfor %}
+    </div>
+</div>
+
+{% else %}
+<div class="glass-card error-card">
+    <h2>Không Có Dữ Liệu</h2>
+    <p>Không thể tạo snapshot.</p>
+    {% if error %}
+    <p class="error-message">{{ error }}</p>
+    {% endif %}
+    <p>Vui lòng chạy tính toán transmission metrics trước.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+.snapshot-date {
+    text-align: center;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+}
+
+.summary-card {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-item {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.summary-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.summary-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--text-primary);
+}
+
+.summary-value.score-high {
+    color: #ef5350;
+}
+
+.summary-value.score-medium {
+    color: #ffb74d;
+}
+
+.summary-value.score-low {
+    color: #81c784;
+}
+
+.summary-value.regime-B0 {
+    color: #81c784;
+}
+
+.summary-value.regime-B1 {
+    color: #a5d6a7;
+}
+
+.summary-value.regime-B2 {
+    color: #fff59d;
+}
+
+.summary-value.regime-B3 {
+    color: #ffcc80;
+}
+
+.summary-value.regime-B4 {
+    color: #ef5350;
+}
+
+.summary-description {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    text-align: center;
+}
+
+.comparison-table {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.comparison-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    align-items: center;
+}
+
+.comparison-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.comparison-current {
+    font-size: 1.2rem;
+    color: var(--text-primary);
+}
+
+.comparison-change {
+    font-weight: bold;
+}
+
+.comparison-change.positive {
+    color: #ef5350;
+}
+
+.comparison-change.negative {
+    color: #81c784;
+}
+
+.comparison-change.neutral {
+    color: var(--text-secondary);
+}
+
+.insights-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.insight-item {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    align-items: flex-start;
+}
+
+.insight-bullet {
+    color: var(--brand);
+    font-size: 1.5rem;
+    line-height: 1.2;
+}
+
+.insight-text {
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.watchlist-table {
+    overflow-x: auto;
+}
+
+.watchlist-table-inner {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.watchlist-table-inner th,
+.watchlist-table-inner td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.watchlist-table-inner th {
+    background: var(--surface-muted);
+    font-weight: 600;
+}
+
+.watchlist-table-inner tbody tr:hover {
+    background: rgba(102, 126, 234, 0.06);
+}
+
+.severity-ca {
+    color: #ef5350;
+    font-weight: bold;
+}
+
+.severity-trung bình {
+    color: #ffb74d;
+    font-weight: bold;
+}
+
+.severity-thấp {
+    color: #81c784;
+    font-weight: bold;
+}
+
+.notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.note-item {
+    padding: 0.75rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.error-card {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    text-align: center;
+    padding: 2rem;
+}
+
+.error-message {
+    color: #ef5350;
+    margin: 1rem 0;
+}
+
+@media (max-width: 768px) {
+    .comparison-row {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}

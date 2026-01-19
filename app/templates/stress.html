@@ -1,0 +1,593 @@
+{% extends "base.html" %}
+
+{% block title %}BondY Stress Index - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>BondY Stress Index</h1>
+    <p>Composite stress indicator for Vietnamese bond market</p>
+</div>
+
+<!-- Global Data Availability Banner -->
+{% if not global_available %}
+<div id="global-banner" class="glass-card warning-card" style="display: block;">
+    <h3>ℹ️ Global Comparators Disabled</h3>
+    {% if not fred_configured %}
+    <p>FRED API key not configured. Set <code>FRED_API_KEY</code> in <code>.env</code> to enable US Treasury comparisons.</p>
+    {% else %}
+    <p>FRED API key configured but no global data ingested yet. Run daily ingest (includes <code>fred_global</code>) to populate global comparisons.</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Today's Stress Index Card -->
+<div class="glass-card stress-card mb-4">
+    <h2>Today's Stress Index</h2>
+    <div id="stress-display">
+        <div class="stress-score" id="stress-bucket">Loading...</div>
+        <div class="stress-value" id="stress-index">--</div>
+        <div class="stress-description" id="stress-explanation">Loading latest data...</div>
+    </div>
+</div>
+
+<!-- Top Drivers Panel -->
+<div class="glass-card mb-4">
+    <h2>Top Stress Drivers</h2>
+    <div id="drivers-panel" class="drivers-grid">
+        <div class="driver-item">
+            <div class="driver-name">Loading...</div>
+            <div class="driver-contribution">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Grid -->
+<div class="dashboard-grid mb-4">
+    <!-- Stress Index Time Series -->
+    <div class="glass-card">
+        <h3>BondY Stress Index (180-Day History)</h3>
+        <div class="chart-container">
+            <canvas id="stressChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Stress vs Transmission Comparison -->
+    <div class="glass-card">
+        <h3>Stress vs Transmission Score</h3>
+        <div class="chart-container">
+            <canvas id="comparisonChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-grid mb-4">
+    {% if global_available %}
+    <!-- VN10Y vs US10Y -->
+    <div class="glass-card">
+        <h3>VN 10Y vs US 10Y Yield</h3>
+        <div class="chart-container">
+            <canvas id="vnVsUsChart"></canvas>
+        </div>
+    </div>
+
+    <!-- VN-US Spread -->
+    <div class="glass-card">
+        <h3>VN-US 10Y Spread</h3>
+        <div class="chart-container">
+            <canvas id="spreadChart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Summary Table -->
+<div class="glass-card">
+    <h2>Today vs Yesterday</h2>
+    <div class="comparison-table" id="summary-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Today</th>
+                    <th>Yesterday</th>
+                    <th>Change</th>
+                </tr>
+            </thead>
+            <tbody id="summary-table-body">
+                <tr><td colspan="4">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.stress-card {
+    text-align: center;
+    padding: 2rem;
+    background: linear-gradient(135deg, rgba(239, 83, 80, 0.1) 0%, rgba(255, 138, 101, 0.1) 100%);
+}
+
+.stress-score {
+    font-size: 4rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.stress-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.stress-description {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.stress-score.S0 { color: #81c784; }
+.stress-score.S1 { color: #a5d6a7; }
+.stress-score.S2 { color: #fff59d; }
+.stress-score.S3 { color: #ffcc80; }
+.stress-score.S4 { color: #ef5350; }
+
+.drivers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.driver-item {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.driver-name {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.driver-contribution {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.comparison-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.comparison-table th,
+.comparison-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.comparison-table th {
+    background: var(--surface-muted);
+    font-weight: 600;
+}
+
+.comparison-table tbody tr:hover {
+    background: rgba(102, 126, 234, 0.06);
+}
+
+.change-positive { color: #ef5350; }
+.change-negative { color: #81c784; }
+.change-neutral { color: var(--text-secondary); }
+
+.warning-card {
+    background: rgba(245, 158, 11, 0.12) !important;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    margin-bottom: 1.5rem;
+}
+
+.warning-card h3 {
+    color: var(--warning);
+}
+
+.warning-card code {
+    background: rgba(245, 158, 11, 0.18);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+}
+</style>
+
+<script>
+// Stress bucket colors and descriptions
+const stressBuckets = {
+    'S0': { color: '#81c784', text: 'Very Low Stress - Market conditions are favorable' },
+    'S1': { color: '#a5d6a7', text: 'Low Stress - Minimal market stress' },
+    'S2': { color: '#fff59d', text: 'Moderate Stress - Balanced conditions' },
+    'S3': { color: '#ffcc80', text: 'High Stress - Elevated market tension' },
+    'S4': { color: '#ef5350', text: 'Very High Stress - Significant stress indicators' }
+};
+
+// Load stress dashboard
+async function loadStressDashboard() {
+    try {
+        // Fetch latest stress data
+        const stressResponse = await fetch('/api/stress/latest');
+        const stressData = await stressResponse.json();
+
+        // Fetch stress timeseries
+        const timeseriesResponse = await fetch('/api/stress/timeseries?start_date=2024-01-01');
+        const timeseriesData = await timeseriesResponse.json();
+
+        // Fetch latest transmission metrics
+        const transmissionResponse = await fetch('/api/transmission/latest');
+        const transmissionData = await transmissionResponse.json();
+
+        // Update stress display
+        updateStressDisplay(stressData);
+
+        // Update drivers panel
+        updateDriversPanel(stressData);
+
+        // Render charts
+        await renderStressChart(timeseriesData);
+        await renderComparisonChart(timeseriesData, transmissionData);
+
+        {% if global_available %}
+        await renderVnVsUsChart();
+        await renderSpreadChart();
+        {% endif %}
+
+        // Update summary table
+        updateSummaryTable(stressData, transmissionData);
+
+    } catch (error) {
+        console.error('Error loading stress dashboard:', error);
+        document.getElementById('stress-bucket').textContent = 'Error';
+        document.getElementById('stress-explanation').textContent = 'Failed to load data';
+    }
+}
+
+// Update stress display
+function updateStressDisplay(stressData) {
+    if (stressData && stressData.length > 0) {
+        const record = stressData[0];
+        const index = record.stress_index;
+        const bucket = record.regime_bucket;
+
+        const bucketEl = document.getElementById('stress-bucket');
+        bucketEl.textContent = bucket || 'N/A';
+        bucketEl.className = 'stress-score ' + (bucket || '');
+
+        document.getElementById('stress-index').textContent = index !== null ? `${index.toFixed(1)}/100` : '--';
+
+        const descEl = document.getElementById('stress-explanation');
+        descEl.textContent = stressBuckets[bucket]?.text || 'Unknown stress level';
+    } else {
+        document.getElementById('stress-bucket').textContent = 'N/A';
+        document.getElementById('stress-index').textContent = '--';
+        document.getElementById('stress-explanation').textContent = 'No stress data available';
+    }
+}
+
+// Update drivers panel
+function updateDriversPanel(stressData) {
+    const panel = document.getElementById('drivers-panel');
+
+    if (stressData && stressData.length > 0) {
+        try {
+            const drivers = JSON.parse(stressData[0].driver_json);
+
+            if (drivers && drivers.length > 0) {
+                panel.innerHTML = drivers.map(driver => `
+                    <div class="driver-item">
+                        <div class="driver-name">${driver.name}</div>
+                        <div class="driver-contribution" style="color: ${driver.contribution > 0 ? '#ef5350' : '#81c784'}">
+                            ${driver.contribution > 0 ? '+' : ''}${driver.contribution.toFixed(1)}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                panel.innerHTML = '<div class="driver-item"><div class="driver-name">No significant drivers</div></div>';
+            }
+        } catch (e) {
+            console.error('Error parsing drivers:', e);
+            panel.innerHTML = '<div class="driver-item"><div class="driver-name">Error loading drivers</div></div>';
+        }
+    } else {
+        panel.innerHTML = '<div class="driver-item"><div class="driver-name">No drivers available</div></div>';
+    }
+}
+
+// Render stress chart
+async function renderStressChart(timeseriesData) {
+    try {
+        const labels = timeseriesData.map(d => d.date).reverse();
+        const stress = timeseriesData.map(d => d.stress_index).reverse();
+
+	        new Chart(document.getElementById('stressChart'), {
+	            type: 'line',
+	            data: {
+	                labels: labels,
+	                datasets: [{
+	                    label: 'BondY Stress Index',
+	                    data: stress,
+	                    borderColor: '#ef4444',
+	                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+	                    borderWidth: 2,
+	                    fill: true,
+	                    tension: 0.4
+	                }]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                },
+	                scales: {
+	                    y: {
+	                        min: 0,
+	                        max: 100,
+	                    }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering stress chart:', error);
+    }
+}
+
+// Render comparison chart
+async function renderComparisonChart(timeseriesData, transmissionData) {
+    try {
+        // Align data by date
+        const stressDict = {};
+        timeseriesData.forEach(d => {
+            stressDict[d.date] = d.stress_index;
+        });
+
+        const transmissionDict = {};
+        transmissionData.forEach(d => {
+            if (d.metric_name === 'transmission_score') {
+                transmissionDict[d.date] = d.metric_value;
+            }
+        });
+
+        const dates = Object.keys(stressDict).sort().slice(-180);
+        const stressValues = dates.map(d => stressDict[d]);
+        const transmissionValues = dates.map(d => transmissionDict[d]);
+
+	        new Chart(document.getElementById('comparisonChart'), {
+	            type: 'line',
+	            data: {
+	                labels: dates,
+	                datasets: [
+	                    {
+	                        label: 'BondY Stress',
+	                        data: stressValues,
+	                        borderColor: '#ef4444',
+	                        backgroundColor: 'transparent',
+	                        borderWidth: 2,
+	                        tension: 0.4,
+	                        yAxisID: 'y'
+	                    },
+	                    {
+	                        label: 'Transmission Score',
+	                        data: transmissionValues,
+	                        borderColor: '#667eea',
+	                        backgroundColor: 'transparent',
+	                        borderWidth: 2,
+	                        tension: 0.4,
+	                        yAxisID: 'y1'
+	                    }
+	                ]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                interaction: {
+	                    mode: 'index',
+	                    intersect: false,
+	                },
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                },
+	                scales: {
+	                    y: {
+	                        type: 'linear',
+	                        display: true,
+	                        position: 'left',
+	                        min: 0,
+	                        max: 100,
+	                    },
+	                    y1: {
+	                        type: 'linear',
+	                        display: true,
+	                        position: 'right',
+	                        min: 0,
+	                        max: 100,
+	                        grid: { drawOnChartArea: false }
+	                    }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering comparison chart:', error);
+    }
+}
+
+{% if global_available %}
+// Render VN vs US chart
+async function renderVnVsUsChart() {
+    try {
+        const endDate = new Date().toISOString().slice(0, 10);
+        const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+        const response = await fetch(`/api/yield-curve/range?start_date=${startDate}&end_date=${endDate}`);
+        const vnData = await response.json();
+
+        const vn10yPoints = vnData
+            .filter(d => d.tenor_label === '10Y' && d.spot_rate_annual !== null)
+            .map(d => ({ date: String(d.date), value: Number(d.spot_rate_annual) }));
+
+        // Get US10Y from global data
+        const globalResponse = await fetch(`/api/global/rates?series_id=DGS10&start_date=${startDate}&end_date=${endDate}`);
+        const usData = await globalResponse.json();
+
+        const us10yPoints = usData
+            .filter(d => d.value !== null)
+            .map(d => ({ date: String(d.date), value: Number(d.value) }));
+
+        const dateSet = new Set([...vn10yPoints.map(p => p.date), ...us10yPoints.map(p => p.date)]);
+        const labelsAll = Array.from(dateSet).sort();
+        const labels = labelsAll.slice(-180);
+
+        const vnMap = new Map(vn10yPoints.map(p => [p.date, p.value]));
+        const usMap = new Map(us10yPoints.map(p => [p.date, p.value]));
+
+        const vnSeries = labels.map(d => (vnMap.has(d) ? vnMap.get(d) : null));
+        const usSeries = labels.map(d => (usMap.has(d) ? usMap.get(d) : null));
+
+	        new Chart(document.getElementById('vnVsUsChart'), {
+	            type: 'line',
+	            data: {
+                    labels: labels,
+		                datasets: [
+		                    {
+		                        label: 'VN 10Y',
+		                        data: vnSeries,
+		                        borderColor: '#667eea',
+		                        borderWidth: 2,
+		                        tension: 0.4
+		                    },
+		                    {
+		                        label: 'US 10Y',
+		                        data: usSeries,
+		                        borderColor: '#f59e0b',
+		                        borderWidth: 2,
+		                        tension: 0.4
+		                    }
+		                ]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                },
+	                scales: {
+	                    x: { type: 'category' }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering VN vs US chart:', error);
+	    }
+}
+
+// Render spread chart
+async function renderSpreadChart() {
+    try {
+        const endDate = new Date().toISOString().slice(0, 10);
+        const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+        const vnResponse = await fetch(`/api/yield-curve/range?start_date=${startDate}&end_date=${endDate}`);
+        const vnData = await vnResponse.json();
+        const vn10yPoints = vnData
+            .filter(d => d.tenor_label === '10Y' && d.spot_rate_annual !== null)
+            .map(d => ({ date: String(d.date), value: Number(d.spot_rate_annual) }));
+
+        const usResponse = await fetch(`/api/global/rates?series_id=DGS10&start_date=${startDate}&end_date=${endDate}`);
+        const usData = await usResponse.json();
+        const us10yPoints = usData
+            .filter(d => d.value !== null)
+            .map(d => ({ date: String(d.date), value: Number(d.value) }));
+
+        const dateSet = new Set([...vn10yPoints.map(p => p.date), ...us10yPoints.map(p => p.date)]);
+        const labelsAll = Array.from(dateSet).sort();
+        const labels = labelsAll.slice(-180);
+
+        const vnMap = new Map(vn10yPoints.map(p => [p.date, p.value]));
+        const usMap = new Map(us10yPoints.map(p => [p.date, p.value]));
+
+        const spreads = labels.map(d => {
+            const vn = vnMap.get(d);
+            const us = usMap.get(d);
+            if (vn === undefined || us === undefined) return null;
+            return vn - us;
+        });
+
+        new Chart(document.getElementById('spreadChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'VN 10Y - US 10Y',
+                        data: spreads,
+                        borderColor: '#10b981',
+                        borderWidth: 2,
+                        tension: 0.35,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { font: { size: 12 } } }
+                },
+                scales: {
+                    x: { type: 'category' }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error rendering spread chart:', error);
+    }
+}
+{% endif %}
+
+// Update summary table
+function updateSummaryTable(stressData, transmissionData) {
+    const tbody = document.getElementById('summary-table-body');
+
+    if (!stressData || stressData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4">No data available</td></tr>';
+        return;
+    }
+
+    const today = stressData[0];
+
+    // Build metrics list
+    const metrics = [
+        { name: 'BondY Stress Index', today: today.stress_index },
+    ];
+
+    // Add transmission metrics
+    if (transmissionData) {
+        const transmissionScore = transmissionData.find(m => m.metric_name === 'transmission_score');
+        if (transmissionScore) {
+            metrics.push({ name: 'Transmission Score', today: transmissionScore.metric_value });
+        }
+    }
+
+    // Render table
+    tbody.innerHTML = metrics.map(m => `
+        <tr>
+            <td>${m.name}</td>
+            <td>${m.today !== null ? m.today.toFixed(1) : '--'}</td>
+            <td>--</td>
+            <td class="change-neutral">--</td>
+        </tr>
+    `).join('');
+}
+
+// Load dashboard on page load
+document.addEventListener('DOMContentLoaded', loadStressDashboard);
+</script>
+{% endblock %}

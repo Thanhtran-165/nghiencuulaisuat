@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Operations - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h2>Operations Dashboard</h2>
+            <p class="text-muted">Database backup, restore, and verification</p>
+
+            <!-- Backup Section -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Create Backup</h5>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-primary" onclick="createBackup()">
+                        <i class="fas fa-download"></i> Create Backup Now
+                    </button>
+                    <div id="backup-result" class="mt-3"></div>
+                </div>
+            </div>
+
+            <!-- Backups List -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>Existing Backups</h5>
+                    <button class="btn btn-secondary btn-sm" onclick="loadBackups()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="backups-table">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Size (MB)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="3" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadBackups();
+});
+
+function createBackup() {
+    const button = event.target;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+
+    fetch('/api/admin/ops/backup', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-download"></i> Create Backup Now';
+
+        const resultDiv = document.getElementById('backup-result');
+        resultDiv.innerHTML = `
+            <div class="alert alert-success">
+                <strong>✓ Backup Created</strong><br>
+                ${data.backup_path}
+            </div>
+        `;
+
+        loadBackups();
+    })
+    .catch(error => {
+        console.error('Error creating backup:', error);
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-download"></i> Create Backup Now';
+        document.getElementById('backup-result').innerHTML = `
+            <div class="alert alert-danger">
+                Failed to create backup: ${error}
+            </div>
+        `;
+    });
+}
+
+function loadBackups() {
+    fetch('/api/admin/ops/backups')
+        .then(response => response.json())
+        .then(data => {
+            renderBackupsTable(data);
+        })
+        .catch(error => {
+            console.error('Error loading backups:', error);
+        });
+}
+
+function renderBackupsTable(backups) {
+    const tbody = document.querySelector('#backups-table tbody');
+    tbody.innerHTML = '';
+
+    if (!backups || backups.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center">No backups found</td></tr>';
+        return;
+    }
+
+    backups.forEach(backup => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${backup.filename}</td>
+            <td>${backup.size_mb}</td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick="verifyBackup('${backup.path}')">
+                    <i class="fas fa-check"></i> Verify
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function verifyBackup(path) {
+    fetch(`/api/admin/ops/verify-backup?backup_path=${encodeURIComponent(path)}`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.valid) {
+            alert(`✓ Backup is valid\nTotal tables: ${data.total_tables}`);
+        } else {
+            alert(`⚠ Backup has issues\nMissing tables: ${data.missing_tables || 'None'}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error verifying backup:', error);
+        alert('Failed to verify backup');
+    });
+}
+</script>
+{% endblock %}

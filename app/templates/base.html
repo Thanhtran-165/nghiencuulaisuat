@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}VN Bond Lab{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    {% if demo_mode %}
+    <style>
+        .demo-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-weight: bold;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .demo-banner::before {
+            content: "⚠️ ";
+        }
+        body {
+            padding-top: 50px;
+        }
+    </style>
+    {% endif %}
+</head>
+<body>
+    {% if demo_mode %}
+    <div class="demo-banner">
+        DEMO MODE - Showing synthetic demonstration data (not real market data)
+    </div>
+    {% endif %}
+
+    <div class="container">
+        <nav>
+            <div class="logo">VN Bond Lab</div>
+            <div class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/insights">Nhận định</a>
+                <a href="/yield-curve">Yield Curve</a>
+                <a href="/interbank">Interbank</a>
+                <a href="/policy">Policy</a>
+                <a href="/rates">Lãi suất</a>
+
+                <details class="nav-dropdown">
+	                    <summary>Admin</summary>
+	                    <div class="dropdown-menu" role="menu">
+	                        <a href="/lab" role="menuitem">Phòng Lab (Nghiên cứu)</a>
+	                        <a href="/data" role="menuitem">Data Explorer</a>
+	                        <a href="/admin/lai-suat" role="menuitem">Cập nhật lãi suất</a>
+	                        <a href="/auctions" role="menuitem">Government Bond Auction Results</a>
+	                        <a href="/secondary" role="menuitem">Secondary Market Trading</a>
+                        <a href="/admin/notifications" role="menuitem">Notifications</a>
+                        <a href="/admin/quality" role="menuitem">Quality</a>
+                        <a href="/admin/ops" role="menuitem">Ops</a>
+                        <a href="/admin/monitoring" role="menuitem">Monitoring</a>
+                        <a href="/admin/ingest" role="menuitem">Ingest</a>
+                    </div>
+                </details>
+            </div>
+        </nav>
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        // Centralized Chart.js theming (reads CSS variables from styles.css)
+        (function applyBondLabChartTheme() {
+            if (!window.Chart) return;
+            const styles = getComputedStyle(document.documentElement);
+            const chartText = styles.getPropertyValue('--chart-text')?.trim() || 'rgba(17,24,39,0.85)';
+            const chartGrid = styles.getPropertyValue('--chart-grid')?.trim() || 'rgba(17,24,39,0.12)';
+            const chartBorder = styles.getPropertyValue('--chart-border')?.trim() || 'rgba(17,24,39,0.16)';
+
+            Chart.defaults.color = chartText;
+            Chart.defaults.borderColor = chartBorder;
+            Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+            Chart.defaults.plugins.legend.labels.color = chartText;
+            Chart.defaults.scale.grid.color = chartGrid;
+            Chart.defaults.scale.ticks.color = chartText;
+        })();
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

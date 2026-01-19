@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+
+{% block title %}Dẫn dắt & Độ trễ - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Ai dẫn ai? (Dẫn dắt & Độ trễ)</h1>
+    <p>Xem biến nào thường đi trước biến nào, và đi trước bao lâu. Các phần nâng cao sẽ tự bật khi dữ liệu đủ.</p>
+    <p style="margin-top: 8px; color: var(--text-secondary);">
+        <a href="#data-readiness" style="color: inherit; text-decoration: underline;">Xem tình trạng dữ liệu</a>
+    </p>
+</div>
+
+<div class="dashboard-grid mb-4">
+    <div class="glass-card">
+        <h2>Dẫn dắt (độ trễ)</h2>
+        <p style="color: var(--text-secondary); margin-top: 0;">
+            Đây là phần dễ hiểu nhất: thử nhiều độ trễ và xem độ “đi cùng nhau” mạnh nhất ở độ trễ nào.
+            <br/>
+            <b>Diễn giải nhanh:</b> nếu “Best lag” là <b>+k</b> thì <b>X thường đi trước Y khoảng k ngày</b>. Nếu là <b>-k</b> thì <b>Y đi trước X</b>.
+        </p>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Biến X (nguyên nhân giả định)</label>
+                <select id="xSeries"></select>
+            </div>
+            <div class="form-group">
+                <label>Biến Y (kết quả giả định)</label>
+                <select id="ySeries"></select>
+            </div>
+            <div class="form-group">
+                <label>Độ trễ tối đa (ngày)</label>
+                <input id="maxLag" type="number" min="5" max="120" value="20" />
+            </div>
+            <div class="form-group">
+                <label>Dùng biến động ngày (Δ)</label>
+                <select id="useDiff">
+                    <option value="true" selected>Có (khuyến nghị)</option>
+                    <option value="false">Không</option>
+                </select>
+            </div>
+            <div class="form-group" style="align-self: end;">
+                <button class="btn-primary" id="runLeadLagBtn">Chạy</button>
+            </div>
+        </div>
+        <div id="leadlagSummary" style="color: var(--text-secondary); margin-top: 6px;"></div>
+        <div class="chart-container">
+            <canvas id="leadLagChart"></canvas>
+        </div>
+        <div class="glass-card warning-card" style="margin-top: 12px;">
+            <h3 style="margin:0 0 6px 0;">Lưu ý</h3>
+            <div style="color: var(--text-secondary);">
+                Dẫn dắt ≠ nhân quả tuyệt đối. Đây là “gợi ý” để bạn nhìn cơ chế, cần kết hợp thêm bối cảnh thị trường và kiểm định nâng cao.
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Kết luận nhanh</h2>
+        <div id="quickTakeaways" style="color: var(--text-secondary);">
+            Chọn X/Y và bấm “Chạy”. Mình sẽ hiển thị câu diễn giải ngắn ở đây.
+        </div>
+    </div>
+</div>
+
+<details id="data-readiness" class="glass-card mb-4" style="padding: 1.25rem;">
+    <summary style="cursor:pointer; font-weight: 700;">Tình trạng dữ liệu</summary>
+    <div style="margin-top: 12px; color: var(--text-secondary);">
+        Gợi ý: các phần “IB/Policy” sẽ trống nếu chưa tích luỹ đủ lịch sử. Khi đủ, hệ thống tự hiện dữ liệu (không cần làm lại).
+    </div>
+    <div class="form-row" style="margin-top: 10px;">
+        <div class="form-group">
+            <label>Từ ngày</label>
+            <input id="startDate" type="date" />
+        </div>
+        <div class="form-group">
+            <label>Đến ngày</label>
+            <input id="endDate" type="date" />
+        </div>
+        <div class="form-group" style="align-self: end;">
+            <button class="btn-primary" id="refreshCoverageBtn">Cập nhật</button>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="alerts-table">
+            <thead>
+                <tr>
+                    <th>Chuỗi</th>
+                    <th>Số ngày</th>
+                    <th>Từ</th>
+                    <th>Đến</th>
+                    <th>Trạng thái</th>
+                </tr>
+            </thead>
+            <tbody id="coverageBody">
+                <tr><td colspan="5">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</details>
+
+<details class="glass-card mb-4" style="padding: 1.25rem;">
+    <summary style="cursor:pointer; font-weight: 700;">Nâng cao (dành cho nghiên cứu)</summary>
+    <div style="margin-top: 12px; color: var(--text-secondary);">
+        Các phần dưới đây dùng thuật ngữ thống kê (Granger/VAR). Nếu bạn chỉ cần “dẫn dắt” thì không cần mở.
+    </div>
+
+    <div id="depsBanner" class="glass-card warning-card" style="display:none; margin-top: 12px;">
+        <h3>ℹ️ Phụ thuộc tuỳ chọn</h3>
+        <p>Granger/VAR/Network cần <code>statsmodels</code>. Nếu thiếu, hệ thống sẽ báo “Disabled”.</p>
+    </div>
+
+    <div class="dashboard-grid" style="margin-top: 14px;">
+        <div class="glass-card">
+            <h2>Kiểm định Granger (nâng cao)</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Giả thuyết: A → B</label>
+                    <div style="display:flex; gap: 10px;">
+                        <select id="grangerCause" style="flex:1;"></select>
+                        <select id="grangerEffect" style="flex:1;"></select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Lag tối đa</label>
+                    <input id="grangerMaxLag" type="number" min="1" max="20" value="5" />
+                </div>
+                <div class="form-group" style="align-self: end;">
+                    <button class="btn-primary" id="runGrangerBtn">Chạy</button>
+                </div>
+            </div>
+            <div id="grangerBanner" style="color: var(--text-secondary); margin-top: 6px;"></div>
+            <div class="table-container">
+                <table class="alerts-table">
+                    <thead>
+                        <tr>
+                            <th>Lag</th>
+                            <th>F</th>
+                            <th>p‑value</th>
+                        </tr>
+                    </thead>
+                    <tbody id="grangerBody">
+                        <tr><td colspan="3">Bấm “Chạy” để xem kết quả</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="glass-card">
+            <h2>VAR / IRF (nâng cao)</h2>
+            <p style="color: var(--text-secondary); margin-top: 0;">
+                Dùng cho nghiên cứu sâu: “cú sốc” ở một biến ảnh hưởng các biến khác ra sao theo thời gian.
+            </p>
+            <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                    <label>Biến (phân cách bằng dấu phẩy)</label>
+                    <input id="varVariables" type="text" value="yield_10y,auction_btc,secondary_value" />
+                </div>
+                <div class="form-group">
+                    <label>Lag tối đa</label>
+                    <input id="varMaxLag" type="number" min="1" max="20" value="5" />
+                </div>
+                <div class="form-group">
+                    <label>Số bước</label>
+                    <input id="varSteps" type="number" min="5" max="60" value="10" />
+                </div>
+                <div class="form-group" style="align-self: end;">
+                    <button class="btn-primary" id="runVarBtn">Chạy</button>
+                </div>
+            </div>
+            <div id="varBanner" style="color: var(--text-secondary); margin-top: 6px;"></div>
+            <div class="chart-container">
+                <canvas id="irfChart"></canvas>
+            </div>
+        </div>
+
+        <div class="glass-card">
+            <h2>Bản đồ quan hệ (nâng cao)</h2>
+            <p style="color: var(--text-secondary); margin-top: 0;">
+                Bảng dưới chỉ liệt kê các cặp có tín hiệu thống kê đáng chú ý (p‑value &lt; α).
+            </p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>α</label>
+                    <input id="netAlpha" type="number" step="0.01" min="0.01" max="0.2" value="0.05" />
+                </div>
+                <div class="form-group">
+                    <label>Lag tối đa</label>
+                    <input id="netMaxLag" type="number" min="1" max="20" value="5" />
+                </div>
+                <div class="form-group" style="align-self: end;">
+                    <button class="btn-primary" id="runNetBtn">Chạy</button>
+                </div>
+            </div>
+            <div id="netBanner" style="color: var(--text-secondary); margin-top: 6px;"></div>
+            <div class="table-container">
+                <table class="alerts-table">
+                    <thead>
+                        <tr>
+                            <th>Từ</th>
+                            <th>Đến</th>
+                            <th>Lag</th>
+                            <th>p‑value</th>
+                        </tr>
+                    </thead>
+                    <tbody id="netBody">
+                        <tr><td colspan="4">Bấm “Chạy” để xem</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.form-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.form-row .form-group {
+    min-width: 200px;
+    flex: 0 0 auto;
+}
+.btn-primary {
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(102, 126, 234, 0.40);
+    background: rgba(102, 126, 234, 0.16);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.btn-primary:hover {
+    background: rgba(102, 126, 234, 0.22);
+}
+.warning-card {
+    background: rgba(245, 158, 11, 0.12) !important;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+</style>
+
+<script>
+let leadLagChart = null;
+let irfChart = null;
+
+function isoDate(d) {
+    return d.toISOString().slice(0, 10);
+}
+
+function setDefaultDates() {
+    const end = new Date();
+    const start = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    document.getElementById('startDate').value = isoDate(start);
+    document.getElementById('endDate').value = isoDate(end);
+}
+
+function escapeHtml(s) {
+    return String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+}
+
+async function loadSeriesCatalog() {
+    const res = await fetch('/api/transmission/causality/series');
+    const series = await res.json();
+    const opts = series.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label)} (${escapeHtml(s.id)})</option>`).join('');
+
+    document.getElementById('xSeries').innerHTML = opts;
+    document.getElementById('ySeries').innerHTML = opts;
+    document.getElementById('grangerCause').innerHTML = opts;
+    document.getElementById('grangerEffect').innerHTML = opts;
+
+    document.getElementById('xSeries').value = 'yield_10y';
+    document.getElementById('ySeries').value = 'auction_btc';
+    document.getElementById('grangerCause').value = 'auction_btc';
+    document.getElementById('grangerEffect').value = 'yield_10y';
+}
+
+async function refreshCoverage() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    const res = await fetch(`/api/transmission/causality/availability?start_date=${start}&end_date=${end}`);
+    const coverage = await res.json();
+
+    const catRes = await fetch('/api/transmission/causality/series');
+    const series = await catRes.json();
+    const meta = new Map(series.map(s => [s.id, s]));
+
+    const rows = coverage.map(c => {
+        const info = meta.get(c.series_id);
+        const minObs = info?.min_obs_recommended || 0;
+        const ok = (c.n_obs || 0) >= minObs;
+        const status = ok ? 'Ready' : (c.n_obs > 0 ? `Partial (need ~${minObs})` : 'Missing');
+        return `
+            <tr>
+                <td>${escapeHtml(info?.label || c.series_id)}</td>
+                <td>${c.n_obs}</td>
+                <td>${c.start || '--'}</td>
+                <td>${c.end || '--'}</td>
+                <td>${escapeHtml(status)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    document.getElementById('coverageBody').innerHTML = rows || '<tr><td colspan="5">No data</td></tr>';
+}
+
+async function runLeadLag() {
+    const x = document.getElementById('xSeries').value;
+    const y = document.getElementById('ySeries').value;
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    const maxLag = Number(document.getElementById('maxLag').value || 20);
+    const diff = document.getElementById('useDiff').value === 'true';
+
+    const res = await fetch(`/api/transmission/causality/leadlag?x=${x}&y=${y}&start_date=${start}&end_date=${end}&max_lag=${maxLag}&diff=${diff}`);
+    const out = await res.json();
+
+    let summary = `Chưa đủ dữ liệu trùng nhau để tính (n=${out.n_obs})`;
+    let takeaway = `Chưa có kết luận vì dữ liệu chưa đủ.`;
+    if (out.best_lag !== null && out.best_corr !== null) {
+        const k = Number(out.best_lag);
+        const corr = Number(out.best_corr);
+        const who = k > 0 ? `X đi trước Y khoảng ${k} ngày` : (k < 0 ? `Y đi trước X khoảng ${Math.abs(k)} ngày` : 'Hai biến đi cùng ngày');
+        summary = `${who} · độ khớp (corr) = ${corr.toFixed(3)} · n=${out.n_obs}`;
+        takeaway = `Gợi ý: ${who}. (Chỉ là dấu hiệu, không khẳng định nhân quả tuyệt đối.)`;
+    }
+    document.getElementById('leadlagSummary').textContent = summary;
+    document.getElementById('quickTakeaways').textContent = takeaway;
+
+    const labels = out.lags.map(l => String(l));
+    const values = out.correlations.map(v => (typeof v === 'number' ? v : null));
+
+    if (leadLagChart) leadLagChart.destroy();
+    leadLagChart = new Chart(document.getElementById('leadLagChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'corr',
+                data: values,
+                backgroundColor: 'rgba(102, 126, 234, 0.25)',
+                borderColor: '#667eea',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { min: -1, max: 1 },
+                x: { title: { display: true, text: 'độ trễ (ngày)' } }
+            }
+        }
+    });
+}
+
+async function runGranger() {
+    const cause = document.getElementById('grangerCause').value;
+    const effect = document.getElementById('grangerEffect').value;
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    const maxLag = Number(document.getElementById('grangerMaxLag').value || 5);
+
+    const res = await fetch(`/api/transmission/causality/granger?cause=${cause}&effect=${effect}&start_date=${start}&end_date=${end}&max_lag=${maxLag}&diff=true`);
+    const out = await res.json();
+
+    const banner = document.getElementById('grangerBanner');
+    const body = document.getElementById('grangerBody');
+
+    if (!out.enabled) {
+        banner.textContent = 'Chưa bật: cần cài statsmodels (tuỳ chọn).';
+        body.innerHTML = '<tr><td colspan="3">Cài statsmodels để dùng kiểm định Granger</td></tr>';
+        document.getElementById('depsBanner').style.display = 'block';
+        return;
+    }
+    if (out.reason) {
+        banner.textContent = `Chưa đủ dữ liệu: ${out.reason} (n=${out.n_obs || 0})`;
+        body.innerHTML = '<tr><td colspan="3">Chưa đủ dữ liệu trùng nhau</td></tr>';
+        return;
+    }
+
+    const best = out.best ? `p nhỏ nhất = ${out.best.p_value.toFixed(4)} ở lag=${out.best.lag}` : 'Không có kết quả';
+    banner.textContent = `n=${out.n_obs} · ${best}`;
+
+    const rows = (out.results || []).map(r => `
+        <tr>
+            <td>${r.lag}</td>
+            <td>${Number(r.f).toFixed(3)}</td>
+            <td>${Number(r.p_value).toFixed(4)}</td>
+        </tr>
+    `).join('');
+    body.innerHTML = rows || '<tr><td colspan="3">No results</td></tr>';
+}
+
+async function runVar() {
+    const vars = encodeURIComponent(document.getElementById('varVariables').value);
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    const maxLag = Number(document.getElementById('varMaxLag').value || 5);
+    const steps = Number(document.getElementById('varSteps').value || 10);
+
+    const res = await fetch(`/api/transmission/causality/var?variables=${vars}&start_date=${start}&end_date=${end}&max_lag=${maxLag}&steps=${steps}&diff=true`);
+    const out = await res.json();
+
+    const banner = document.getElementById('varBanner');
+    if (!out.enabled) {
+        banner.textContent = 'Chưa bật: cần cài statsmodels (tuỳ chọn).';
+        document.getElementById('depsBanner').style.display = 'block';
+        return;
+    }
+    if (out.reason) {
+        banner.textContent = `Chưa đủ điều kiện: ${out.reason}`;
+        return;
+    }
+
+    banner.textContent = `VAR lag=${out.selected_lag} · n=${out.n_obs}`;
+    const varsList = out.variables || [];
+    const impulse = varsList[0];
+    const response = varsList[0];
+    const series = out.irf?.[impulse]?.[response] || [];
+
+    if (irfChart) irfChart.destroy();
+    irfChart = new Chart(document.getElementById('irfChart'), {
+        type: 'line',
+        data: {
+            labels: series.map((_, i) => String(i)),
+            datasets: [{
+                label: `IRF: shock ${impulse} → ${response}`,
+                data: series,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+async function runNetwork() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    const alpha = Number(document.getElementById('netAlpha').value || 0.05);
+    const maxLag = Number(document.getElementById('netMaxLag').value || 5);
+
+    const res = await fetch(`/api/transmission/causality/network?start_date=${start}&end_date=${end}&alpha=${alpha}&max_lag=${maxLag}&diff=true`);
+    const out = await res.json();
+    const banner = document.getElementById('netBanner');
+    const body = document.getElementById('netBody');
+
+    if (!out.enabled) {
+        banner.textContent = 'Chưa bật: cần cài statsmodels (tuỳ chọn).';
+        body.innerHTML = '<tr><td colspan="4">Cài statsmodels để dùng bản đồ quan hệ</td></tr>';
+        document.getElementById('depsBanner').style.display = 'block';
+        return;
+    }
+    if (out.reason) {
+        banner.textContent = `Chưa đủ điều kiện: ${out.reason}`;
+        body.innerHTML = '<tr><td colspan="4">Chưa có quan hệ đáng chú ý</td></tr>';
+        return;
+    }
+
+    const edges = out.edges || [];
+    banner.textContent = `Số quan hệ: ${edges.length} (α=${out.alpha})`;
+    body.innerHTML = edges.map(e => `
+        <tr>
+            <td>${escapeHtml(e.from)}</td>
+            <td>${escapeHtml(e.to)}</td>
+            <td>${e.lag}</td>
+            <td>${Number(e.p_value).toFixed(4)}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="4">No significant edges</td></tr>';
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    setDefaultDates();
+    await loadSeriesCatalog();
+    await refreshCoverage();
+
+    document.getElementById('refreshCoverageBtn').addEventListener('click', refreshCoverage);
+    document.getElementById('runLeadLagBtn').addEventListener('click', runLeadLag);
+    document.getElementById('runGrangerBtn').addEventListener('click', runGranger);
+    document.getElementById('runVarBtn').addEventListener('click', runVar);
+    document.getElementById('runNetBtn').addEventListener('click', runNetwork);
+
+    await runLeadLag();
+});
+</script>
+{% endblock %}

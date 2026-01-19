@@ -1,0 +1,36 @@
+[Unit]
+Description=Interest Rates Scraper
+Documentation=https://github.com/your-org/interest-rates-backend
+After=network.target
+
+[Service]
+Type=oneshot
+# Update User to your system user (e.g., ubuntu, www-data, ec2-user)
+User=www-data
+# Update WorkingDirectory to absolute path of backend directory
+WorkingDirectory=/path/to/backend
+
+# Python binary path - UPDATE THIS based on your setup
+# For system Python:
+Environment="PYTHON_BIN=/usr/bin/python3"
+# For virtual environment (uncomment and update path):
+# Environment="PYTHON_BIN=/path/to/backend/venv/bin/python"
+
+# Main scraper command with flock to prevent concurrent runs
+# flock -n fails immediately if lock is held (non-blocking)
+ExecStart=/usr/bin/bash -c 'flock -n /var/run/interest-rates-scraper.lock -c "$PYTHON_BIN -m app.cli scrape --all || echo \"Scraper failed with exit code $?\""'
+
+# Timeout to prevent hanging
+TimeoutStartSec=600
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=append:/var/log/interest-rates-scraper.log
+StandardError=append:/var/log/interest-rates-scraper.log
+
+# Resource limits (optional)
+# MemoryLimit=512M
+# CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

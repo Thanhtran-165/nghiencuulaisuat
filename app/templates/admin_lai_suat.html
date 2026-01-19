@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Lai_suat - Admin{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Lai_suat (thu thập lãi suất)</h1>
+    <p>
+        Trang này giúp bạn “lấy toàn bộ dự án con vào hệ thống” theo nghĩa vận hành:
+        <strong>chạy crawler</strong> + <strong>đồng bộ dữ liệu</strong> sang DB chung để các màn hình của Bond Lab dùng được.
+    </p>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-card">
+        <h2>Cập nhật nhanh</h2>
+        <p class="mb-4">1 nút: chạy crawler (Lai_suat) rồi nhập dữ liệu hôm nay vào DB chung.</p>
+        <button id="btnUpdateToday" class="btn btn-primary" onclick="updateToday()">
+            Cập nhật hôm nay
+        </button>
+        <div id="updateStatus" class="mt-4"></div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Chạy crawler</h2>
+        <p class="mb-4">Chỉ chạy crawler để cập nhật <code>Lai_suat/data/rates.db</code>.</p>
+        <button id="btnScrape" class="btn btn-secondary" onclick="runScrape()">
+            Chạy crawler
+        </button>
+        <div id="scrapeStatus" class="mt-4"></div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Chép sang DB chung</h2>
+        <p class="mb-4">Chép toàn bộ lịch sử có sẵn từ SQLite sang bảng <code>bank_rates</code>.</p>
+        <button id="btnSyncAll" class="btn btn-primary" onclick="syncAll()">
+            Chép toàn bộ
+        </button>
+        <div id="syncStatus" class="mt-4"></div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Lai_suat UI (nguyên bản)</h2>
+        <p class="mb-4">Bật/tắt giao diện gốc (Next.js) để nhúng vào Bond Lab.</p>
+        <div class="flex gap-4">
+            <button id="btnUiStart" class="btn btn-primary" onclick="startUi()">Start UI</button>
+            <button id="btnUiStop" class="btn btn-secondary" onclick="stopUi()">Stop UI</button>
+            <a class="btn btn-secondary" href="/lai-suat/ui">Mở UI nhúng</a>
+        </div>
+        <div id="uiStatus" class="mt-4"></div>
+    </div>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Trạng thái</h2>
+        <button class="btn btn-secondary" onclick="refreshStatus()">Tải lại</button>
+    </div>
+
+    <div id="statusBox" class="mt-4">
+        <div class="loading"><div class="spinner"></div></div>
+    </div>
+
+    <div class="mt-4">
+        <a class="btn btn-secondary" href="/bank-rates">Mở màn hình lãi suất (tab chính)</a>
+    </div>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Log crawler (mới nhất)</h2>
+        <button class="btn btn-secondary" onclick="loadLog()">Tải log</button>
+    </div>
+    <p class="mb-4">Nếu log trống: hôm nay chưa chạy crawler.</p>
+    <pre id="logBox" style="white-space: pre-wrap; margin: 0; max-height: 360px; overflow: auto; background: rgba(17,24,39,0.04); border: 1px solid rgba(17,24,39,0.10); padding: 14px; border-radius: 12px;">Đang tải…</pre>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function setBadge(elId, msg, kind) {
+    const el = document.getElementById(elId);
+    if (!msg) { el.innerHTML = ''; return; }
+    el.innerHTML = `<span class="status-badge status-${kind}">${escapeHtml(msg)}</span>`;
+}
+
+async function refreshStatus() {
+    const box = document.getElementById('statusBox');
+    box.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+    try {
+        const res = await fetch('/api/admin/lai-suat/status');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const s = await res.json();
+
+        const sqliteOk = s.sqlite && s.sqlite.available;
+        const duckOk = s.duckdb && s.duckdb.available;
+
+        let html = '';
+        html += `<div class="pill">SQLite: ${sqliteOk ? 'OK' : 'Không có/ lỗi'}</div>`;
+        html += `<div class="pill">DB chung (bank_rates): ${duckOk ? 'OK' : 'Chưa có'}</div>`;
+
+        if (sqliteOk) {
+            html += `<div class="mt-4"><strong>SQLite</strong><br>`;
+            html += `Ngày: ${escapeHtml(s.sqlite.min_date || '--')} → ${escapeHtml(s.sqlite.max_date || '--')}<br>`;
+            html += `Dòng quan sát: ${escapeHtml(s.sqlite.observations_count ?? '--')}<br>`;
+            html += `Cập nhật lần cuối (scraped_at): ${escapeHtml(s.sqlite.last_scraped_at || '--')}</div>`;
+        } else if (s.sqlite && s.sqlite.error) {
+            html += `<div class="mt-4"><span class="status-badge status-failed">SQLite lỗi</span> ${escapeHtml(s.sqlite.error)}</div>`;
+        }
+
+        if (duckOk) {
+            html += `<div class="mt-4"><strong>DB chung</strong><br>`;
+            html += `Ngày: ${escapeHtml(s.duckdb.min_date || '--')} → ${escapeHtml(s.duckdb.max_date || '--')}<br>`;
+            html += `Dòng: ${escapeHtml(s.duckdb.row_count ?? '--')}</div>`;
+        }
+
+        if (s.log && s.log.path) {
+            html += `<div class="mt-4"><strong>Log file</strong><br><code>${escapeHtml(s.log.path)}</code></div>`;
+        }
+
+        box.innerHTML = html;
+    } catch (e) {
+        box.innerHTML = `<span class="status-badge status-failed">Lỗi</span> ${escapeHtml(e.message)}`;
+    }
+}
+
+async function loadLog() {
+    const box = document.getElementById('logBox');
+    box.textContent = 'Đang tải…';
+    try {
+        const res = await fetch('/api/admin/lai-suat/log-tail?lines=250');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        box.textContent = d.tail || '(log trống)';
+    } catch (e) {
+        box.textContent = `Lỗi tải log: ${e.message}`;
+    }
+}
+
+async function runScrape() {
+    const btn = document.getElementById('btnScrape');
+    btn.disabled = true;
+    btn.textContent = 'Đang chạy…';
+    setBadge('scrapeStatus', 'Đang chạy crawler…', 'running');
+    try {
+        const res = await fetch('/api/admin/lai-suat/scrape', { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        setBadge('scrapeStatus', `Xong (exit=${d.exit_code})`, d.exit_code === 0 ? 'completed' : 'failed');
+        await refreshStatus();
+        await loadLog();
+    } catch (e) {
+        setBadge('scrapeStatus', `Lỗi: ${e.message}`, 'failed');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Chạy crawler';
+    }
+}
+
+async function updateToday() {
+    const btn = document.getElementById('btnUpdateToday');
+    btn.disabled = true;
+    btn.textContent = 'Đang cập nhật…';
+    setBadge('updateStatus', 'Đang chạy crawler + nhập dữ liệu…', 'running');
+    try {
+        const res = await fetch('/api/admin/lai-suat/update-today', { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        setBadge('updateStatus', `Xong: +${d.rows_inserted} dòng (exit=${d.scrape_exit_code})`, 'completed');
+        await refreshStatus();
+        await loadLog();
+    } catch (e) {
+        setBadge('updateStatus', `Lỗi: ${e.message}`, 'failed');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Cập nhật hôm nay';
+    }
+}
+
+async function syncAll() {
+    const btn = document.getElementById('btnSyncAll');
+    btn.disabled = true;
+    setBadge('syncStatus', 'Đang chép dữ liệu…', 'running');
+    try {
+        const res = await fetch('/api/admin/lai-suat/sync-all', { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        setBadge('syncStatus', `Xong: +${d.rows_inserted} dòng (${d.start_date} → ${d.end_date})`, 'completed');
+        await refreshStatus();
+    } catch (e) {
+        setBadge('syncStatus', `Lỗi: ${e.message}`, 'failed');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function refreshUiStatus() {
+    try {
+        const res = await fetch('/api/admin/lai-suat/ui/status');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        if (d.running) {
+            setBadge('uiStatus', `UI đang chạy (port ${d.port})`, 'completed');
+        } else {
+            setBadge('uiStatus', 'UI đang tắt', 'failed');
+        }
+    } catch (e) {
+        setBadge('uiStatus', `Lỗi: ${e.message}`, 'failed');
+    }
+}
+
+async function startUi() {
+    const btn = document.getElementById('btnUiStart');
+    btn.disabled = true;
+    setBadge('uiStatus', 'Đang start UI…', 'running');
+    try {
+        const res = await fetch('/api/admin/lai-suat/ui/start', { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await refreshUiStatus();
+    } catch (e) {
+        setBadge('uiStatus', `Lỗi: ${e.message}`, 'failed');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function stopUi() {
+    const btn = document.getElementById('btnUiStop');
+    btn.disabled = true;
+    setBadge('uiStatus', 'Đang stop UI…', 'running');
+    try {
+        const res = await fetch('/api/admin/lai-suat/ui/stop', { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await refreshUiStatus();
+    } catch (e) {
+        setBadge('uiStatus', `Lỗi: ${e.message}`, 'failed');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await refreshStatus();
+    await loadLog();
+    await refreshUiStatus();
+});
+</script>
+{% endblock %}

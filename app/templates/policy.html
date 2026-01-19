@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Policy Rates - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>SBV Policy Rates</h1>
+    <p>State Bank of Vietnam policy rates over time</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Filters</h2>
+        <form id="filterForm" class="flex gap-4 flex-wrap">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" name="start_date" value="{{ start_date or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" name="end_date" value="{{ end_date or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="rateName">Rate Type:</label>
+                <select id="rateName" name="rate_name">
+                    <option value="">All Rates</option>
+                    <option value="Refinancing Rate">Refinancing Rate</option>
+                    <option value="Rediscount Rate">Rediscount Rate</option>
+                    <option value="Base Rate">Base Rate</option>
+                    <option value="Reserve Requirement Ratio">Reserve Requirement Ratio</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+        </form>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Policy Rates Over Time</h2>
+    <div class="chart-container">
+        <canvas id="policyChart"></canvas>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Policy Rates Table</h2>
+    <div class="table-container">
+        <table id="policyTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Rate Name</th>
+                    <th>Rate (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="3" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let policyChart = null;
+
+async function loadPolicyRates() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const rateName = document.getElementById('rateName').value;
+
+    try {
+        const params = new URLSearchParams({
+            start_date: startDate || new Date().toISOString().split('T')[0],
+            end_date: endDate || new Date().toISOString().split('T')[0]
+        });
+
+        if (rateName) params.append('rate_name', rateName);
+
+        const response = await fetch(`/api/policy-rates/range?${params}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load policy rates');
+        }
+
+        const data = await response.json();
+
+        // Update table
+        updateTable(data);
+
+        // Update chart
+        updateChart(data);
+
+    } catch (error) {
+        console.error('Error loading policy rates:', error);
+        document.querySelector('#policyTable tbody').innerHTML =
+            '<tr><td colspan="3" class="text-center">No data available for selected filters</td></tr>';
+    }
+}
+
+function updateTable(data) {
+    const tbody = document.querySelector('#policyTable tbody');
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center">No data found</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(d => `
+        <tr>
+            <td>${d.date}</td>
+            <td>${d.rate_name}</td>
+            <td>${d.rate.toFixed(3)}%</td>
+        </tr>
+    `).join('');
+}
+
+function updateChart(data) {
+    // Group by date and rate name
+    const grouped = {};
+    const rateNames = new Set();
+
+    data.forEach(d => {
+        if (!grouped[d.date]) {
+            grouped[d.date] = {};
+        }
+        grouped[d.date][d.rate_name] = d.rate;
+        rateNames.add(d.rate_name);
+    });
+
+    const dates = Object.keys(grouped).sort();
+    const colors = [
+        'rgba(54, 162, 235, 0.8)',
+        'rgba(255, 99, 132, 0.8)',
+        'rgba(75, 192, 192, 0.8)',
+        'rgba(255, 206, 86, 0.8)',
+        'rgba(153, 102, 255, 0.8)'
+    ];
+
+    const datasets = Array.from(rateNames).sort().map((rateName, i) => ({
+        label: rateName,
+        data: dates.map(date => grouped[date][rateName] || null),
+        borderColor: colors[i % colors.length],
+        backgroundColor: colors[i % colors.length].replace('0.8', '0.2'),
+        tension: 0.1,
+        spanGaps: true
+    }));
+
+    if (policyChart) {
+        policyChart.destroy();
+    }
+
+	    const ctx = document.getElementById('policyChart').getContext('2d');
+	    policyChart = new Chart(ctx, {
+	        type: 'line',
+	        data: {
+	            labels: dates,
+	            datasets: datasets
+	        },
+	        options: {
+	            responsive: true,
+	            maintainAspectRatio: false,
+	            plugins: {
+	                title: {
+	                    display: true,
+	                    text: 'SBV Policy Rates (%)'
+	                },
+	                legend: {
+	                }
+	            },
+	            scales: {
+	                x: {},
+	                y: {
+	                    ticks: {
+	                        callback: function(value) {
+	                            return value + '%';
+	                        }
+	                    },
+	                    title: {
+	                        display: true,
+	                        text: 'Rate (%)'
+	                    }
+	                }
+	            }
+	        }
+	    });
+	}
+
+// Event listeners
+document.getElementById('filterForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadPolicyRates();
+});
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', () => {
+    // Set default dates (last 90 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 90);
+
+    document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+    document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+
+    loadPolicyRates();
+});
+</script>
+{% endblock %}

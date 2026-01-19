@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}Alert Thresholds - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h2>Alert Thresholds Management</h2>
+            <p class="text-muted">Configure alert detection thresholds and severity levels</p>
+
+            <!-- Refresh button -->
+            <button class="btn btn-secondary mb-3" onclick="loadThresholds()">
+                <i class="fas fa-sync-alt"></i> Reload from Database
+            </button>
+
+            <!-- Thresholds table -->
+            <div class="card">
+                <div class="card-header">
+                    <h5>Alert Thresholds</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="thresholds-table">
+                            <thead>
+                                <tr>
+                                    <th>Alert Code</th>
+                                    <th>Enabled</th>
+                                    <th>Severity</th>
+                                    <th>Parameters</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="5" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Threshold -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>Test Threshold</h5>
+                </div>
+                <div class="card-body">
+                    <form id="test-form">
+                        <div class="form-group">
+                            <label for="test-alert-code">Alert Code:</label>
+                            <select class="form-control" id="test-alert-code">
+                                <option value="">Select alert code...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="test-metrics">Metrics (JSON):</label>
+                            <textarea class="form-control" id="test-metrics" rows="10"
+                                      placeholder='{"ib_on_zscore_20d": 2.5, "slope_10y_2y": 2.1}'
+                                      class="font-monospace"></textarea>
+                            <small class="form-text text-muted">
+                                Leave empty to use latest available metrics from database
+                            </small>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="test-params">Custom Parameters (JSON, optional):</label>
+                            <textarea class="form-control" id="test-params" rows="3"
+                                      placeholder='{"z_min": 3.0}'
+                                      class="font-monospace"></textarea>
+                            <small class="form-text text-muted">
+                                Override threshold parameters for testing
+                            </small>
+                        </div>
+
+                        <button type="button" class="btn btn-primary mt-3" onclick="testThreshold()">
+                            <i class="fas fa-flask"></i> Test
+                        </button>
+                    </form>
+
+                    <div id="test-result" class="mt-3" style="display: none;">
+                        <h6>Test Result:</h6>
+                        <pre id="test-result-content" class="pre-scrollable bg-light p-3"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Threshold: <span id="edit-alert-code"></span></h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <div class="form-group">
+                        <label for="edit-enabled">Enabled:</label>
+                        <select class="form-control" id="edit-enabled">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group mt-3">
+                        <label for="edit-severity">Severity:</label>
+                        <select class="form-control" id="edit-severity">
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group mt-3">
+                        <label for="edit-params">Parameters (JSON):</label>
+                        <textarea class="form-control font-monospace" id="edit-params" rows="10"></textarea>
+                        <small class="form-text text-muted">
+                            Threshold parameters as JSON object
+                        </small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveThreshold()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentThresholds = [];
+
+// Load thresholds on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadThresholds();
+});
+
+function loadThresholds() {
+    fetch('/api/admin/alerts')
+        .then(response => response.json())
+        .then(data => {
+            currentThresholds = data;
+            renderThresholds(data);
+            populateAlertCodeSelect(data);
+        })
+        .catch(error => {
+            console.error('Error loading thresholds:', error);
+            showError('Failed to load thresholds');
+        });
+}
+
+function renderThresholds(thresholds) {
+    const tbody = document.querySelector('#thresholds-table tbody');
+    tbody.innerHTML = '';
+
+    if (thresholds.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No thresholds configured</td></tr>';
+        return;
+    }
+
+    thresholds.forEach(threshold => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><code>${threshold.alert_code}</code></td>
+            <td>
+                ${threshold.enabled
+                    ? '<span class="badge badge-success">Enabled</span>'
+                    : '<span class="badge badge-secondary">Disabled</span>'}
+            </td>
+            <td>
+                <span class="badge badge-${threshold.severity === 'HIGH' ? 'danger' : threshold.severity === 'MEDIUM' ? 'warning' : 'info'}">
+                    ${threshold.severity}
+                </span>
+            </td>
+            <td><pre class="mb-0">${JSON.stringify(threshold.params, null, 2)}</pre></td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="editThreshold('${threshold.alert_code}')">
+                    <i class="fas fa-edit"></i> Edit
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function populateAlertCodeSelect(thresholds) {
+    const select = document.getElementById('test-alert-code');
+    select.innerHTML = '<option value="">Select alert code...</option>';
+
+    thresholds.forEach(threshold => {
+        const option = document.createElement('option');
+        option.value = threshold.alert_code;
+        option.textContent = threshold.alert_code;
+        select.appendChild(option);
+    });
+}
+
+function editThreshold(alertCode) {
+    const threshold = currentThresholds.find(t => t.alert_code === alertCode);
+    if (!threshold) return;
+
+    document.getElementById('edit-alert-code').textContent = alertCode;
+    document.getElementById('edit-enabled').value = threshold.enabled.toString();
+    document.getElementById('edit-severity').value = threshold.severity;
+    document.getElementById('edit-params').value = JSON.stringify(threshold.params, null, 2);
+
+    $('#editModal').modal('show');
+}
+
+function saveThreshold() {
+    const alertCode = document.getElementById('edit-alert-code').textContent;
+    const enabled = document.getElementById('edit-enabled').value === 'true';
+    const severity = document.getElementById('edit-severity').value;
+    const params = document.getElementById('edit-params').value;
+
+    // Validate JSON
+    try {
+        JSON.parse(params);
+    } catch (e) {
+        alert('Invalid JSON in parameters: ' + e.message);
+        return;
+    }
+
+    const queryParams = new URLSearchParams({
+        enabled: enabled,
+        severity: severity,
+        params: params
+    });
+
+    fetch(`/api/admin/alerts/${alertCode}?${queryParams}`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        $('#editModal').modal('hide');
+        loadThresholds();
+        showSuccess('Threshold saved successfully');
+    })
+    .catch(error => {
+        console.error('Error saving threshold:', error);
+        showError('Failed to save threshold');
+    });
+}
+
+function testThreshold() {
+    const alertCode = document.getElementById('test-alert-code').value;
+    const metrics = document.getElementById('test-metrics').value.trim();
+    const customParams = document.getElementById('test-params').value.trim();
+
+    if (!alertCode) {
+        alert('Please select an alert code');
+        return;
+    }
+
+    // Validate JSON if provided
+    if (metrics) {
+        try {
+            JSON.parse(metrics);
+        } catch (e) {
+            alert('Invalid JSON in metrics: ' + e.message);
+            return;
+        }
+    }
+
+    if (customParams) {
+        try {
+            JSON.parse(customParams);
+        } catch (e) {
+            alert('Invalid JSON in custom parameters: ' + e.message);
+            return;
+        }
+    }
+
+    const queryParams = new URLSearchParams();
+    queryParams.append('alert_code', alertCode);
+    if (metrics) queryParams.append('metrics', metrics);
+    if (customParams) queryParams.append('custom_params', customParams);
+
+    fetch(`/api/admin/alerts/test?${queryParams}`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        const resultDiv = document.getElementById('test-result');
+        const resultContent = document.getElementById('test-result-content');
+        resultContent.textContent = JSON.stringify(data, null, 2);
+        resultDiv.style.display = 'block';
+    })
+    .catch(error => {
+        console.error('Error testing threshold:', error);
+        showError('Failed to test threshold');
+    });
+}
+
+function showSuccess(message) {
+    // Simple alert for now, could use a toast notification
+    alert(message);
+}
+
+function showError(message) {
+    alert(message);
+}
+</script>
+
+<style>
+.font-monospace {
+    font-family: 'Courier New', Courier, monospace;
+}
+</style>
+{% endblock %}

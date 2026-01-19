@@ -1,0 +1,319 @@
+{% extends "rates_layout.html" %}
+
+{% block rates_content %}
+<div class="glass-card">
+    <h2>Máy tính tài chính</h2>
+    <p class="mb-4">Mô phỏng nhanh theo lãi suất năm. Có thể lấy lãi suất từ bảng “Hôm nay” để điền vào.</p>
+
+    <div class="flex gap-4">
+        <button id="tabLoan" class="btn btn-primary" onclick="setCalc('loan')">Khoản vay</button>
+        <button id="tabDeposit" class="btn btn-secondary" onclick="setCalc('deposit')">Tiền gửi</button>
+        <a class="btn btn-secondary" href="/rates">Xem lãi suất hôm nay</a>
+    </div>
+</div>
+
+<div id="loanBox" class="dashboard-grid">
+    <div class="glass-card">
+        <h2>Khoản vay</h2>
+        <div class="form-group">
+            <label>Số tiền vay (VND)</label>
+            <input id="loanPrincipal" type="number" value="100000000">
+        </div>
+        <div class="form-group">
+            <label>Lãi suất năm (%/năm)</label>
+            <input id="loanRate" type="number" step="0.01" value="12">
+        </div>
+        <div class="form-group">
+            <label>Kỳ hạn (tháng)</label>
+            <input id="loanMonths" type="number" min="1" value="12">
+        </div>
+        <div class="form-group">
+            <label>Phương thức trả nợ</label>
+            <select id="loanMethod">
+                <option value="annuity" selected>Trả góp đều (Annuity/EMI)</option>
+                <option value="principal_equal">Dư nợ giảm dần (Gốc đều)</option>
+                <option value="interest_only">Chỉ trả lãi, gốc cuối kỳ</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Ân hạn gốc (tháng)</label>
+            <input id="loanGrace" type="number" min="0" value="0">
+        </div>
+        <div class="flex gap-4">
+            <button class="btn btn-primary" onclick="calcLoan()">Tính</button>
+            <button class="btn btn-secondary" onclick="loanExample()">Ví dụ</button>
+        </div>
+        <div id="loanStatus" class="mt-4"></div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Kết quả</h2>
+        <div class="dashboard-grid" style="margin-bottom:0;">
+            <div class="glass-card metric-card">
+                <div class="metric-label">Tổng lãi</div>
+                <div id="loanTotalInterest" class="metric-value">--</div>
+            </div>
+            <div class="glass-card metric-card">
+                <div class="metric-label">Tổng tiền trả</div>
+                <div id="loanTotalPayment" class="metric-value">--</div>
+            </div>
+            <div class="glass-card metric-card">
+                <div class="metric-label">Kỳ đầu</div>
+                <div id="loanFirst" class="metric-value">--</div>
+            </div>
+            <div class="glass-card metric-card">
+                <div class="metric-label">Kỳ lớn nhất</div>
+                <div id="loanMax" class="metric-value">--</div>
+            </div>
+        </div>
+        <div class="chart-container" style="height: 260px;">
+            <canvas id="loanChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div id="depositBox" class="dashboard-grid" style="display:none;">
+    <div class="glass-card">
+        <h2>Tiền gửi</h2>
+        <div class="form-group">
+            <label>Số tiền gửi (VND)</label>
+            <input id="depPrincipal" type="number" value="100000000">
+        </div>
+        <div class="form-group">
+            <label>Lãi suất năm (%/năm)</label>
+            <input id="depRate" type="number" step="0.01" value="6">
+        </div>
+        <div class="form-group">
+            <label>Kỳ hạn (tháng)</label>
+            <input id="depMonths" type="number" min="1" value="12">
+        </div>
+        <div class="form-group">
+            <label>Hình thức nhận lãi</label>
+            <select id="depPayment">
+                <option value="end" selected>Nhận cuối kỳ</option>
+                <option value="monthly">Nhận hàng tháng</option>
+                <option value="quarterly">Nhận hàng quý</option>
+                <option value="compound">Lãi nhập gốc</option>
+            </select>
+        </div>
+        <div class="flex gap-4">
+            <button class="btn btn-primary" onclick="calcDeposit()">Tính</button>
+            <button class="btn btn-secondary" onclick="depExample()">Ví dụ</button>
+        </div>
+        <div id="depStatus" class="mt-4"></div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Kết quả</h2>
+        <div class="dashboard-grid" style="margin-bottom:0;">
+            <div class="glass-card metric-card">
+                <div class="metric-label">Tổng lãi</div>
+                <div id="depTotalInterest" class="metric-value">--</div>
+            </div>
+            <div class="glass-card metric-card">
+                <div class="metric-label">Giá trị cuối kỳ</div>
+                <div id="depFinal" class="metric-value">--</div>
+            </div>
+        </div>
+        <div class="chart-container" style="height: 260px;">
+            <canvas id="depChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Lịch trả / Dòng tiền (rút gọn)</h2>
+        <span id="schedPill" class="pill">--</span>
+    </div>
+    <div class="table-container">
+        <table id="scheduleTable">
+            <thead><tr><th>Kỳ</th><th>Số dư đầu</th><th>Gốc</th><th>Lãi</th><th>Tổng</th><th>Số dư cuối</th></tr></thead>
+            <tbody><tr><td colspan="6" class="text-center">Chưa tính</td></tr></tbody>
+        </table>
+    </div>
+    <p class="mt-4" style="color: rgba(17,24,39,0.6);">
+        Lưu ý: Đây là mô phỏng nhanh (ước tính theo tháng) để dễ hiểu. Nếu bạn muốn chuẩn hoá học thuật (Actual/365 đầy đủ, ngày trả, phí, ân hạn chi tiết), mình sẽ nâng cấp tiếp.
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function el(id){ return document.getElementById(id); }
+function fmtVnd(v){
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  return Number(v).toLocaleString('vi-VN');
+}
+function fmtPct(v){
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  return Number(v).toFixed(2) + '%';
+}
+
+let loanChart = null;
+let depChart = null;
+
+function setCalc(which){
+  el('tabLoan').className = `btn ${which==='loan'?'btn-primary':'btn-secondary'}`;
+  el('tabDeposit').className = `btn ${which==='deposit'?'btn-primary':'btn-secondary'}`;
+  el('loanBox').style.display = which==='loan' ? '' : 'none';
+  el('depositBox').style.display = which==='deposit' ? '' : 'none';
+}
+
+function renderSchedule(rows){
+  const tbody = el('scheduleTable').querySelector('tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Không có dữ liệu</td></tr>';
+    el('schedPill').textContent = '0 dòng';
+    return;
+  }
+  tbody.innerHTML = rows.slice(0, 24).map(r => `
+    <tr>
+      <td>${r.period}</td>
+      <td>${fmtVnd(r.begin)}</td>
+      <td>${fmtVnd(r.principal)}</td>
+      <td>${fmtVnd(r.interest)}</td>
+      <td>${fmtVnd(r.total)}</td>
+      <td>${fmtVnd(r.end)}</td>
+    </tr>
+  `).join('');
+  el('schedPill').textContent = `${rows.length} kỳ (hiển thị 24 kỳ đầu)`;
+}
+
+function renderLineChart(canvasId, datasetLabel, labels, values){
+  const ctx = el(canvasId).getContext('2d');
+  const chartRef = canvasId === 'loanChart' ? loanChart : depChart;
+  if (chartRef) chartRef.destroy();
+  const c = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ label: datasetLabel, data: values, borderColor:'#667eea', backgroundColor:'rgba(102,126,234,0.14)', tension:0.25, pointRadius:2 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:true}}, scales:{ y:{ title:{display:true, text:'VND'} } } }
+  });
+  if (canvasId === 'loanChart') loanChart = c; else depChart = c;
+}
+
+function loanExample(){
+  el('loanPrincipal').value = 500000000;
+  el('loanRate').value = 10.5;
+  el('loanMonths').value = 24;
+  el('loanMethod').value = 'annuity';
+  el('loanGrace').value = 0;
+}
+
+function depExample(){
+  el('depPrincipal').value = 200000000;
+  el('depRate').value = 7;
+  el('depMonths').value = 12;
+  el('depPayment').value = 'monthly';
+}
+
+function calcLoan(){
+  const P = Number(el('loanPrincipal').value || 0);
+  const annual = Number(el('loanRate').value || 0) / 100;
+  const n = Number(el('loanMonths').value || 0);
+  const method = el('loanMethod').value;
+  const grace = Math.max(0, Number(el('loanGrace').value || 0));
+
+  if (P <= 0 || n <= 0) { el('loanStatus').innerHTML = '<span class="status-badge status-failed">Nhập dữ liệu hợp lệ</span>'; return; }
+
+  const r = annual / 12;
+  let balance = P;
+  const schedule = [];
+
+  const effectiveN = Math.max(1, n - Math.min(grace, n));
+  const annuity = (method === 'annuity')
+    ? (balance * r * Math.pow(1+r, effectiveN) / (Math.pow(1+r, effectiveN)-1))
+    : null;
+
+  for (let i=1;i<=n;i++){
+    const interest = balance * r;
+    let principal = 0;
+    let total = 0;
+
+    const inGrace = i <= grace;
+    if (inGrace && method !== 'interest_only') {
+      principal = 0;
+      total = interest;
+    } else if (method === 'annuity') {
+      total = annuity;
+      principal = total - interest;
+    } else if (method === 'principal_equal') {
+      const denom = effectiveN;
+      principal = P / denom;
+      if (i <= grace) principal = 0;
+      total = principal + interest;
+    } else if (method === 'interest_only') {
+      if (i === n) { principal = balance; total = principal + interest; }
+      else { principal = 0; total = interest; }
+    }
+
+    if (principal > balance) principal = balance;
+    const begin = balance;
+    balance = Math.max(0, balance - principal);
+
+    schedule.push({ period:i, begin, principal, interest, total, end: balance });
+  }
+
+  const totalInterest = schedule.reduce((s,x)=>s+x.interest,0);
+  const totalPayment = schedule.reduce((s,x)=>s+x.total,0);
+  const first = schedule[0]?.total || 0;
+  const maxp = Math.max(...schedule.map(x=>x.total));
+
+  el('loanTotalInterest').textContent = fmtVnd(totalInterest);
+  el('loanTotalPayment').textContent = fmtVnd(totalPayment);
+  el('loanFirst').textContent = fmtVnd(first);
+  el('loanMax').textContent = fmtVnd(maxp);
+  el('loanStatus').innerHTML = '<span class="status-badge status-completed">Xong</span>';
+
+  renderSchedule(schedule);
+  renderLineChart('loanChart', 'Dư nợ', schedule.map(x=>x.period), schedule.map(x=>x.end));
+}
+
+function calcDeposit(){
+  const P = Number(el('depPrincipal').value || 0);
+  const annual = Number(el('depRate').value || 0) / 100;
+  const n = Number(el('depMonths').value || 0);
+  const pay = el('depPayment').value;
+
+  if (P <= 0 || n <= 0) { el('depStatus').innerHTML = '<span class="status-badge status-failed">Nhập dữ liệu hợp lệ</span>'; return; }
+
+  const r = annual / 12;
+  let balance = P;
+  let totalInterest = 0;
+  const schedule = [];
+  let quarterlyAcc = 0;
+
+  for (let i=1;i<=n;i++){
+    const interest = balance * r;
+    totalInterest += interest;
+    let cash = 0;
+
+    if (pay === 'monthly') cash = interest;
+    else if (pay === 'quarterly') {
+      quarterlyAcc += interest;
+      if (i % 3 === 0) { cash = quarterlyAcc; quarterlyAcc = 0; }
+    } else if (pay === 'compound') {
+      balance += interest;
+    } else if (pay === 'end' && i === n) {
+      cash = balance + interest;
+      balance = 0;
+    }
+
+    const begin = (pay === 'compound') ? (balance - interest) : balance;
+    schedule.push({ period:i, begin, principal:0, interest, total:cash, end: balance });
+  }
+
+  el('depTotalInterest').textContent = fmtVnd(totalInterest);
+  el('depFinal').textContent = fmtVnd(schedule[schedule.length-1]?.end ?? balance);
+  el('depStatus').innerHTML = '<span class="status-badge status-completed">Xong</span>';
+
+  renderSchedule(schedule);
+  renderLineChart('depChart', 'Số dư', schedule.map(x=>x.period), schedule.map(x=>x.end));
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  setCalc('loan');
+});
+</script>
+{% endblock %}
+

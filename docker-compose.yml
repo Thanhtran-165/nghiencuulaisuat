@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vn-bond-lab
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist database and raw data
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      # Application settings
+      - APP_NAME=vn-bond-lab
+      - APP_VERSION=1.0.0
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+
+      # Server settings
+      - HOST=0.0.0.0
+      - PORT=8000
+
+      # Database
+      - DB_PATH=/app/data/duckdb/bonds.duckdb
+
+      # Data collection
+      - START_DATE_DEFAULT=2013-01-01
+      - RATE_LIMIT_SECONDS=1.0
+      - MAX_CONCURRENT_REQUESTS=3
+      - REQUEST_TIMEOUT=30
+      - MAX_RETRIES=3
+
+      # Scheduler (disabled by default, enable if needed)
+      - SCHEDULER_ENABLED=false
+      - SCHEDULER_DAILY_TIME=18:05
+      - SCHEDULER_TIMEZONE=Asia/Ho_Chi_Minh
+
+      # Provider URLs
+      - HNX_BASE_URL=https://hnx.vn
+      - HNX_FTP_BASE_URL=https://owa.hnx.vn/ftp
+      - SBV_BASE_URL=https://www.sbv.gov.vn
+      - ABO_BASE_URL=https://asianbondsonline.adb.org
+
+      # Playwright
+      - PLAYWRIGHT_HEADLESS=true
+      - PLAYWRIGHT_TIMEOUT=30000
+
+      # Raw data storage
+      - RAW_DATA_PATH=/app/data/raw
+      - ENABLE_RAW_STORAGE=true
+
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  data:
+  logs:

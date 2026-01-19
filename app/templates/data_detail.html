@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Data - {{ dataset_id }} - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dataset: {{ dataset_id }}</h1>
+    <p>{% if info %}{{ info.name }}{% else %}Không tìm thấy dataset{% endif %}</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between gap-4 dataset-detail-head">
+        <a class="btn btn-secondary" href="/data">← Quay lại</a>
+        {% if info and info.url %}
+        <a class="btn btn-primary" href="{{ info.url }}" target="_blank" rel="noopener">Mở nguồn dữ liệu</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if not info %}
+<div class="glass-card">
+    <h2>Không tìm thấy dataset</h2>
+    <p>{{ stats.error }}</p>
+</div>
+{% else %}
+<div class="glass-card">
+    <h2>Metadata</h2>
+    <div class="dataset-meta">
+        <div><span class="meta-k">Name</span> <span class="meta-v">{{ info.name }}</span></div>
+        <div><span class="meta-k">Provider</span> <span class="meta-v">{{ info.provider }}</span></div>
+        <div><span class="meta-k">Frequency</span> <span class="meta-v">{{ info.frequency }}</span></div>
+        <div><span class="meta-k">Method</span> <span class="meta-v">{{ info.access_method }}</span></div>
+        <div><span class="meta-k">Provenance</span> <span class="meta-v">{{ info.provenance }}</span></div>
+        <div><span class="meta-k">Table</span> <span class="meta-v"><code>{{ table }}</code></span></div>
+        <div>
+            <span class="meta-k">Historical</span>
+            <span class="meta-v">
+                {% if info.supports_historical %}
+                    <span class="status-badge status-completed">YES</span>
+                {% else %}
+                    <span class="status-badge status-running">NO</span>
+                {% endif %}
+            </span>
+        </div>
+    </div>
+    {% if info.description %}
+    <p class="dataset-desc">{{ info.description }}</p>
+    {% endif %}
+</div>
+
+<div class="glass-card">
+    <h2>Live Stats</h2>
+    {% if stats.available %}
+    <div class="dataset-stats">
+        <div class="kv"><div class="k">Rows</div><div class="v">{{ stats.row_count }}</div></div>
+        <div class="kv">
+            <div class="k">Date range</div>
+            <div class="v">
+                {% if stats.date_min %}{{ stats.date_min }}{% else %}--{% endif %}
+                →
+                {% if stats.date_max %}{{ stats.date_max }}{% else %}--{% endif %}
+            </div>
+        </div>
+        <div class="kv"><div class="k">Last updated</div><div class="v">{% if stats.last_updated %}{{ stats.last_updated }}{% else %}--{% endif %}</div></div>
+    </div>
+    {% if stats.sources and stats.sources|length > 0 %}
+    <div class="dataset-sources mt-4">
+        <div class="k">Sources</div>
+        <div class="v">
+            {% for s in stats.sources %}
+            <span class="pill">{{ s.source }} ({{ s.rows }})</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <p><span class="status-badge status-failed">No stats</span> {{ stats.error }}</p>
+    {% endif %}
+</div>
+
+<div class="glass-card">
+    <h2>Schema</h2>
+    {% if schema and schema|length > 0 %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Column</th>
+                    <th>Type</th>
+                    <th>Not Null</th>
+                    <th>PK</th>
+                    <th>Default</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in schema %}
+                <tr>
+                    <td><code>{{ c.name }}</code></td>
+                    <td>{{ c.type }}</td>
+                    <td>{{ 'YES' if c.notnull else 'NO' }}</td>
+                    <td>{{ 'YES' if c.pk else 'NO' }}</td>
+                    <td>{{ c.default if c.default is not none else '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>Không có schema (table chưa tồn tại hoặc DB chưa sẵn sàng).</p>
+    {% endif %}
+</div>
+
+<div class="glass-card">
+    <h2>Sample Rows</h2>
+    {% if sample_columns and sample_columns|length > 0 %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    {% for col in sample_columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sample_rows %}
+                <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>Không có sample rows.</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+

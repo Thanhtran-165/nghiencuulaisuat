@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Monitoring - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h2>Monitoring Dashboard</h2>
+            <p class="text-muted">Pipeline health, provider reliability, and drift detection</p>
+
+            <!-- Pipeline Status -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Pipeline Status (Latest)</h5>
+                </div>
+                <div class="card-body" id="pipeline-status">
+                    <p class="text-muted">Loading...</p>
+                </div>
+            </div>
+
+            <!-- SLO Metrics (30 days) -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>SLO Metrics (Last 30 Days)</h5>
+                </div>
+                <div class="card-body" id="slo-metrics">
+                    <p class="text-muted">Loading...</p>
+                </div>
+            </div>
+
+            <!-- Provider Reliability -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Provider Reliability (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="providers-table">
+                            <thead>
+                                <tr>
+                                    <th>Provider</th>
+                                    <th>Total Runs</th>
+                                    <th>Success</th>
+                                    <th>Error</th>
+                                    <th>Success Rate</th>
+                                    <th>Avg Latency (s)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="7" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Drift Signals -->
+            <div class="card">
+                <div class="card-header">
+                    <h5>Source Drift Signals (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="drift-table">
+                            <thead>
+                                <tr>
+                                    <th>Provider</th>
+                                    <th>Dataset</th>
+                                    <th>Fingerprint Changes</th>
+                                    <th>Last Fetched</th>
+                                    <th>Avg Rowcount</th>
+                                    <th>Parse Failures</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="6" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadMonitoringData();
+    setInterval(loadMonitoringData, 60000);  // Refresh every minute
+});
+
+function loadMonitoringData() {
+    loadPipelineStatus();
+    loadSloMetrics();
+    loadProviderReliability();
+    loadDriftSignals();
+}
+
+function loadPipelineStatus() {
+    fetch('/api/admin/monitoring/summary')
+        .then(response => response.json())
+        .then(data => {
+            renderPipelineStatus(data);
+        })
+        .catch(error => {
+            console.error('Error loading pipeline status:', error);
+            document.getElementById('pipeline-status').innerHTML =
+                '<div class="alert alert-danger">Failed to load pipeline status</div>';
+        });
+}
+
+function renderPipelineStatus(data) {
+    const container = document.getElementById('pipeline-status');
+
+    const ingest = data.last_ingest;
+    const dq = data.last_dq;
+
+    let ingestStatus = ingest ? {
+        'success': 'success',
+        'error': 'danger',
+        'running': 'warning'
+    }[ingest.status.toLowerCase()] || 'secondary';
+
+    let dqStatus = dq ? {
+        'PASS': 'success',
+        'WARN': 'warning',
+        'FAIL': 'danger'
+    }[dq.status] || 'secondary';
+
+    container.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <strong>Last Ingest Run:</strong><br>
+                <span class="badge badge-${ingestStatus}">${ingest ? ingest.status : 'N/A'}</span>
+                ${ingest ? `<br>Started: ${ingest.started_at.split('T')[0]} ${ingest.started_at.split('T')[1].split('.')[0]}` : ''}
+                ${ingest && ingest.duration_seconds ? `<br>Duration: ${ingest.duration_seconds.toFixed(2)}s` : ''}
+            </div>
+            <div class="col-md-6">
+                <strong>Last DQ Run:</strong><br>
+                <span class="badge badge-${dqStatus}">${dq ? dq.status : 'N/A'}</span>
+                ${dq ? `<br>Run at: ${dq.run_at.split('T')[0]} ${dq.run_at.split('T')[1].split('.')[0]}` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function loadSloMetrics() {
+    fetch('/api/admin/monitoring/summary')
+        .then(response => response.json())
+        .then(data => {
+            renderSloMetrics(data.slo_30d);
+        })
+        .catch(error => {
+            console.error('Error loading SLO metrics:', error);
+        });
+}
+
+function renderSloMetrics(slo) {
+    const container = document.getElementById('slo-metrics');
+
+    if (!slo) {
+        container.innerHTML = '<p class="text-muted">No data available</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="row text-center">
+            <div class="col-md-4">
+                <h3>${slo.total_days || 0}</h3>
+                <small>Total Days</small>
+            </div>
+            <div class="col-md-4">
+                <h3>${slo.dq_success_rate || 0}%</h3>
+                <small>DQ Success Rate</small>
+            </div>
+            <div class="col-md-4">
+                <h3>${slo.snapshot_coverage || 0}%</h3>
+                <small>Snapshot Coverage</small>
+            </div>
+        </div>
+        ${slo.dq_failed_days > 0 ? `<div class="alert alert-warning mt-2">⚠️ ${slo.dq_failed_days} days blocked by DQ ERROR</div>` : ''}
+    `;
+}
+
+function loadProviderReliability() {
+    fetch('/api/admin/monitoring/providers')
+        .then(response => response.json())
+        .then(data => {
+            renderProviderTable(data);
+        })
+        .catch(error => {
+            console.error('Error loading provider data:', error);
+        });
+}
+
+function renderProviderTable(data) {
+    const tbody = document.querySelector('#providers-table tbody');
+    tbody.innerHTML = '';
+
+    if (!data.providers || Object.keys(data.providers).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No data available</td></tr>';
+        return;
+    }
+
+    for (const [provider, stats] of Object.entries(data.providers)) {
+        const latency = data.latencies[provider] || 'N/A';
+        const successRate = stats.success_rate !== null ? stats.success_rate + '%' : 'N/A';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><code>${provider}</code></td>
+            <td>${stats.total}</td>
+            <td>${stats.success}</td>
+            <td>${stats.error}</td>
+            <td><span class="badge badge-${stats.success_rate >= 90 ? 'success' : stats.success_rate >= 70 ? 'warning' : 'danger'}">${successRate}</span></td>
+            <td>${latency}s</td>
+        `;
+        tbody.appendChild(tr);
+    }
+}
+
+function loadDriftSignals() {
+    fetch('/api/admin/monitoring/drift')
+        .then(response => response.json())
+        .then(data => {
+            renderDriftTable(data);
+        })
+        .catch(error => {
+            console.error('Error loading drift signals:', error);
+        });
+}
+
+function renderDriftTable(data) {
+    const tbody = document.querySelector('#drift-table tbody');
+    tbody.innerHTML = '';
+
+    if (!data.drifts || data.drifts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">✓ No drift signals detected</td></tr>';
+        return;
+    }
+
+    data.drifts.forEach(drift => {
+        const tr = document.createElement('tr');
+        const hasFailures = drift.parse_failures > 0;
+
+        tr.innerHTML = `
+            <td><code>${drift.provider}</code></td>
+            <td><code>${drift.dataset_id}</code></td>
+            <td><span class="badge badge-${hasFailures ? 'danger' : 'info'}">${drift.fingerprint_changes}</span></td>
+            <td>${drift.last_fetched.split('T')[0]}</td>
+            <td>${drift.avg_rowcount}</td>
+            <td>${hasFailures ? `<span class="badge badge-danger">${drift.parse_failures}</span>` : '✓'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+</script>
+{% endblock %}

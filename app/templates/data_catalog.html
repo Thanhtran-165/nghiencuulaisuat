@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Data Explorer - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Data Explorer</h1>
+    <p>Danh mục dataset và thống kê live từ DuckDB{% if db_path %} ({{ db_path }}){% endif %}</p>
+</div>
+
+<div class="dataset-grid">
+    {% for item in datasets %}
+    <div class="glass-card dataset-card">
+        <div class="dataset-head">
+            <div class="dataset-title-wrap">
+                <div class="dataset-title">{{ item.info.name }}</div>
+                <div class="dataset-subtitle">
+                    <code>{{ item.dataset_id }}</code>
+                    {% if item.table %} • <code>{{ item.table }}</code>{% endif %}
+                </div>
+            </div>
+            <a class="btn btn-secondary" href="/data/{{ item.dataset_id }}">Chi tiết</a>
+        </div>
+
+        <div class="dataset-meta">
+            <div><span class="meta-k">Provider</span> <span class="meta-v">{{ item.info.provider }}</span></div>
+            <div><span class="meta-k">Frequency</span> <span class="meta-v">{{ item.info.frequency }}</span></div>
+            <div><span class="meta-k">Method</span> <span class="meta-v">{{ item.info.access_method }}</span></div>
+            <div><span class="meta-k">Provenance</span> <span class="meta-v">{{ item.info.provenance }}</span></div>
+            <div>
+                <span class="meta-k">Historical</span>
+                <span class="meta-v">
+                    {% if item.info.supports_historical %}
+                        <span class="status-badge status-completed">YES</span>
+                    {% else %}
+                        <span class="status-badge status-running">NO</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        {% if item.info.description %}
+        <div class="dataset-desc">{{ item.info.description }}</div>
+        {% endif %}
+
+        {% if item.info.url %}
+        <div class="dataset-link">
+            <a href="{{ item.info.url }}" target="_blank" rel="noopener">Nguồn dữ liệu</a>
+        </div>
+        {% endif %}
+
+        <div class="dataset-stats">
+            {% if item.stats.available %}
+            <div class="kv">
+                <div class="k">Rows</div>
+                <div class="v">{{ item.stats.row_count }}</div>
+            </div>
+            <div class="kv">
+                <div class="k">Date range</div>
+                <div class="v">
+                    {% if item.stats.date_min %}{{ item.stats.date_min }}{% else %}--{% endif %}
+                    →
+                    {% if item.stats.date_max %}{{ item.stats.date_max }}{% else %}--{% endif %}
+                </div>
+            </div>
+            <div class="kv">
+                <div class="k">Last updated</div>
+                <div class="v">{% if item.stats.last_updated %}{{ item.stats.last_updated }}{% else %}--{% endif %}</div>
+            </div>
+
+            {% if item.stats.sources and item.stats.sources|length > 0 %}
+            <div class="dataset-sources">
+                <div class="k">Sources</div>
+                <div class="v">
+                    {% for s in item.stats.sources[:6] %}
+                    <span class="pill">{{ s.source }} ({{ s.rows }})</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="dataset-error">
+                <span class="status-badge status-failed">No stats</span>
+                {{ item.stats.error }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+

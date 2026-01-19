@@ -1,0 +1,230 @@
+{% extends "rates_layout.html" %}
+
+{% block rates_content %}
+<div class="glass-card">
+    <div class="flex gap-4">
+        <button id="tabDeposit" class="btn btn-primary" onclick="setMode('deposit')">Tiền gửi: Online vs Tại quầy</button>
+        <button id="tabLoan" class="btn btn-secondary" onclick="setMode('loan')">Cho vay: Thế chấp vs Tín chấp</button>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-card">
+        <h2>Bộ lọc</h2>
+        <div id="filtersDeposit" class="dashboard-grid" style="margin-bottom: 0;">
+            <div class="form-group">
+                <label for="depositTerm">Kỳ hạn (tháng)</label>
+                <select id="depositTerm">
+                    <option value="1">1</option>
+                    <option value="3">3</option>
+                    <option value="6">6</option>
+                    <option value="12" selected>12</option>
+                    <option value="18">18</option>
+                    <option value="24">24</option>
+                    <option value="36">36</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="filtersLoan" class="dashboard-grid" style="margin-bottom: 0; display:none;">
+            <div class="form-group">
+                <label for="loanMetric">So sánh theo</label>
+                <select id="loanMetric">
+                    <option value="min_rate" selected>Chênh lệch lãi tối thiểu</option>
+                    <option value="range">Chênh lệch biên độ</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="flex gap-4">
+            <button class="btn btn-primary" onclick="loadCompare()">Chạy so sánh</button>
+            <span id="status" class="pill"></span>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Biểu đồ (Top 15)</h2>
+        <div class="chart-container" style="height: 360px;">
+            <canvas id="barChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Chi tiết</h2>
+        <span id="tablePill" class="pill">--</span>
+    </div>
+    <div class="table-container">
+        <table id="compareTable">
+            <thead id="thead"></thead>
+            <tbody id="tbody"><tr><td class="text-center">Chưa chạy</td></tr></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function el(id){ return document.getElementById(id); }
+function fmtPct(v){
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+  return Number(v).toFixed(2);
+}
+function fmtDate(s){
+  if (!s) return '—';
+  try { return new Date(s).toLocaleDateString('vi-VN'); } catch { return s; }
+}
+
+let mode = 'deposit';
+let chart = null;
+
+function setMode(next){
+  mode = next;
+  el('tabDeposit').className = `btn ${mode==='deposit'?'btn-primary':'btn-secondary'}`;
+  el('tabLoan').className = `btn ${mode==='loan'?'btn-primary':'btn-secondary'}`;
+  el('filtersDeposit').style.display = mode==='deposit' ? '' : 'none';
+  el('filtersLoan').style.display = mode==='loan' ? '' : 'none';
+  el('status').textContent = '';
+  el('tablePill').textContent = '--';
+  el('thead').innerHTML = '';
+  el('tbody').innerHTML = '<tr><td class="text-center">Chưa chạy</td></tr>';
+  if (chart) { chart.destroy(); chart = null; }
+}
+
+function renderBar(labels, values, title){
+  const ctx = el('barChart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: title,
+        data: values,
+        backgroundColor: 'rgba(102,126,234,0.35)',
+        borderColor: 'rgba(102,126,234,0.85)',
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true } },
+      scales: {
+        x: { ticks: { maxRotation: 45, minRotation: 45 } },
+        y: { title: { display: true, text: '%'} }
+      }
+    }
+  });
+}
+
+async function loadCompare(){
+  el('status').textContent = 'Đang tải…';
+  try {
+    if (mode === 'deposit') {
+      const term = el('depositTerm').value;
+      const [online, counter] = await Promise.all([
+        fetch(`/api/bank-rates/latest?series_code=deposit_online&term_months=${encodeURIComponent(term)}`).then(r=>r.json()),
+        fetch(`/api/bank-rates/latest?series_code=deposit_tai_quay&term_months=${encodeURIComponent(term)}`).then(r=>r.json()),
+      ]);
+
+      const map = new Map();
+      for (const r of online) map.set(r.bank_name, { bank: r.bank_name, online: r.rate_pct, scraped_at: r.scraped_at });
+      for (const r of counter) {
+        const x = map.get(r.bank_name) || { bank: r.bank_name };
+        x.counter = r.rate_pct;
+        x.scraped_at = x.scraped_at || r.scraped_at;
+        if (x.online != null && x.counter != null) x.diff = Number(x.online) - Number(x.counter);
+        map.set(r.bank_name, x);
+      }
+
+      const rows = Array.from(map.values())
+        .filter(x => x.diff != null)
+        .sort((a,b)=> (b.diff ?? 0) - (a.diff ?? 0))
+        .slice(0, 15);
+
+      el('thead').innerHTML = `
+        <tr>
+          <th>Ngân hàng</th>
+          <th>Online</th>
+          <th>Tại quầy</th>
+          <th>Chênh lệch</th>
+          <th>Cập nhật</th>
+        </tr>`;
+      el('tbody').innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.bank}</td>
+          <td>${fmtPct(r.online)}%</td>
+          <td>${fmtPct(r.counter)}%</td>
+          <td>${fmtPct(r.diff)}%</td>
+          <td>${fmtDate(r.scraped_at)}</td>
+        </tr>`).join('');
+      el('tablePill').textContent = `${rows.length} ngân hàng`;
+      renderBar(rows.map(r=>r.bank), rows.map(r=>r.diff), `Chênh lệch (Online - Tại quầy) • ${term} tháng`);
+      el('status').textContent = 'Xong';
+      return;
+    }
+
+    // loan
+    const metric = el('loanMetric').value;
+    const [secured, unsecured] = await Promise.all([
+      fetch(`/api/bank-rates/latest?series_code=loan_the_chap`).then(r=>r.json()),
+      fetch(`/api/bank-rates/latest?series_code=loan_tin_chap`).then(r=>r.json()),
+    ]);
+
+    const map = new Map();
+    for (const r of secured) map.set(r.bank_name, { bank: r.bank_name, smin: r.rate_min_pct, smax: r.rate_max_pct, scraped_at: r.scraped_at });
+    for (const r of unsecured) {
+      const x = map.get(r.bank_name) || { bank: r.bank_name };
+      x.umin = r.rate_min_pct;
+      x.umax = r.rate_max_pct;
+      x.scraped_at = x.scraped_at || r.scraped_at;
+      if (metric === 'min_rate') {
+        if (x.umin != null && x.smin != null) x.diff = Number(x.umin) - Number(x.smin);
+      } else {
+        const sr = (x.smax!=null && x.smin!=null) ? Number(x.smax)-Number(x.smin) : null;
+        const ur = (x.umax!=null && x.umin!=null) ? Number(x.umax)-Number(x.umin) : null;
+        if (sr!=null && ur!=null) x.diff = ur - sr;
+      }
+      map.set(r.bank_name, x);
+    }
+
+    const rows = Array.from(map.values())
+      .filter(x => x.diff != null)
+      .sort((a,b)=> (b.diff ?? 0) - (a.diff ?? 0))
+      .slice(0, 15);
+
+    el('thead').innerHTML = `
+      <tr>
+        <th>Ngân hàng</th>
+        <th>Thế chấp</th>
+        <th>Tín chấp</th>
+        <th>Chênh lệch</th>
+        <th>Cập nhật</th>
+      </tr>`;
+    el('tbody').innerHTML = rows.map(r => {
+      const s = metric === 'min_rate' ? `${fmtPct(r.smin)}%` : `${fmtPct(r.smin)}–${fmtPct(r.smax)}%`;
+      const u = metric === 'min_rate' ? `${fmtPct(r.umin)}%` : `${fmtPct(r.umin)}–${fmtPct(r.umax)}%`;
+      return `
+        <tr>
+          <td>${r.bank}</td>
+          <td>${s}</td>
+          <td>${u}</td>
+          <td>${fmtPct(r.diff)}%</td>
+          <td>${fmtDate(r.scraped_at)}</td>
+        </tr>`;
+    }).join('');
+    el('tablePill').textContent = `${rows.length} ngân hàng`;
+    renderBar(rows.map(r=>r.bank), rows.map(r=>r.diff), metric === 'min_rate' ? 'Chênh lệch lãi tối thiểu (Tín chấp - Thế chấp)' : 'Chênh lệch biên độ (Tín chấp - Thế chấp)');
+    el('status').textContent = 'Xong';
+  } catch (e) {
+    console.error(e);
+    el('status').textContent = 'Lỗi tải';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', ()=> setMode('deposit'));
+</script>
+{% endblock %}
+

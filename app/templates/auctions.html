@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}Auction Results - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Government Bond Auction Results</h1>
+    <p>Plain-language view of primary market demand and pricing</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Filters</h2>
+        <form id="filterForm" class="flex gap-4 flex-wrap">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" name="start_date" value="{{ start_date or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" name="end_date" value="{{ end_date or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="instrumentType">Instrument:</label>
+                <select id="instrumentType" name="instrument_type">
+                    <option value="">All</option>
+                    <option value="Government Bond">Government Bond</option>
+                    <option value="T-Bill">T-Bill</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="tenor">Tenor:</label>
+                <select id="tenor" name="tenor">
+                    <option value="">All</option>
+                    <option value="3M">3M</option>
+                    <option value="6M">6M</option>
+                    <option value="1Y">1Y</option>
+                    <option value="2Y">2Y</option>
+                    <option value="5Y">5Y</option>
+                    <option value="10Y">10Y</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+        </form>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <div class="flex-between" style="gap: 16px; align-items: flex-start;">
+        <div style="flex: 1;">
+            <h2>At a glance</h2>
+            <p class="text-muted" style="margin-top: 6px;">
+                Tóm tắt dễ hiểu cho khoảng thời gian bạn đang lọc.
+            </p>
+        </div>
+        <details style="flex: 1;">
+            <summary style="cursor: pointer; font-weight: 600;">What do these numbers mean?</summary>
+            <div style="margin-top: 10px; color: var(--text-secondary); line-height: 1.6;">
+                <div><b>Offered</b>: Chính phủ muốn vay bao nhiêu.</div>
+                <div><b>Sold</b>: Thị trường mua được bao nhiêu.</div>
+                <div><b>Sell-through</b>: % bán được (Sold / Offered). Cao → cầu mạnh.</div>
+                <div><b>Bid-to-cover</b>: mức “cạnh tranh” của phiên đấu thầu. Cao → nhiều người đặt mua.</div>
+                <div><b>Cutoff yield</b>: lãi suất trúng thầu (chi phí vốn của Chính phủ) ở kỳ hạn đó.</div>
+            </div>
+        </details>
+    </div>
+
+    <div class="dashboard-grid" style="margin-top: 18px;">
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Total Sold</div>
+            <div class="metric-value" id="kpiTotalSold">--</div>
+            <div class="metric-change" id="kpiTotalSoldNote"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Sell-through</div>
+            <div class="metric-value" id="kpiSellThrough">--</div>
+            <div class="metric-change" id="kpiSellThroughNote"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Avg Bid-to-cover</div>
+            <div class="metric-value" id="kpiBidToCover">--</div>
+            <div class="metric-change" id="kpiBidToCoverNote"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Avg Cutoff Yield</div>
+            <div class="metric-value" id="kpiCutoff">--</div>
+            <div class="metric-change" id="kpiCutoffNote"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Latest Auction</div>
+            <div class="metric-value" id="kpiLatestDate">--</div>
+            <div class="metric-change" id="kpiDemand"></div>
+        </div>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Auction Amount Sold (by Tenor)</h2>
+    <div class="chart-container">
+        <canvas id="auctionChart"></canvas>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Auction Results Table</h2>
+    <div class="table-container">
+        <table id="auctionTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Instrument</th>
+                    <th>Tenor</th>
+                    <th>Offered (B VND)</th>
+                    <th>Sold (B VND)</th>
+                    <th>Sell-through</th>
+                    <th>Bid/Cover</th>
+                    <th>Cutoff Yield (%)</th>
+                    <th>Avg Yield (%)</th>
+                    <th>Demand</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="10" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let auctionChart = null;
+
+function safeNumber(x) {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : null;
+}
+
+function formatBnVND(amount) {
+    const n = safeNumber(amount);
+    if (n === null) return '--';
+    return (n / 1000000000).toFixed(1);
+}
+
+function formatPct(value, digits = 0) {
+    const n = safeNumber(value);
+    if (n === null) return '--';
+    return (n * 100).toFixed(digits) + '%';
+}
+
+function classifyDemand(sellThrough, bidToCover) {
+    // Simple heuristic for non-expert users
+    const st = safeNumber(sellThrough);
+    const btc = safeNumber(bidToCover);
+    if (st === null && btc === null) return { label: 'Unknown', klass: 'status-running' };
+    if ((st !== null && st >= 0.9) || (btc !== null && btc >= 2.0)) return { label: 'Strong', klass: 'status-completed' };
+    if ((st !== null && st <= 0.6) || (btc !== null && btc < 1.0)) return { label: 'Weak', klass: 'status-failed' };
+    return { label: 'Normal', klass: 'status-running' };
+}
+
+async function loadAuctions() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const instrumentType = document.getElementById('instrumentType').value;
+    const tenor = document.getElementById('tenor').value;
+
+    try {
+        const params = new URLSearchParams({
+            start_date: startDate || new Date().toISOString().split('T')[0],
+            end_date: endDate || new Date().toISOString().split('T')[0]
+        });
+
+        if (instrumentType) params.append('instrument_type', instrumentType);
+        if (tenor) params.append('tenor', tenor);
+
+        const response = await fetch(`/api/auctions/range?${params}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load auction data');
+        }
+
+        const data = await response.json();
+
+        // Update table
+        updateTable(data);
+
+        // Update simple insights
+        updateInsights(data);
+
+        // Update chart
+        updateChart(data);
+
+    } catch (error) {
+        console.error('Error loading auctions:', error);
+        document.querySelector('#auctionTable tbody').innerHTML =
+            '<tr><td colspan="10" class="text-center">No data available for selected filters</td></tr>';
+    }
+}
+
+function updateTable(data) {
+    const tbody = document.querySelector('#auctionTable tbody');
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">No data found</td></tr>';
+        return;
+    }
+
+    // Sort newest first for readability
+    const rows = [...data].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+    tbody.innerHTML = rows.map(d => {
+        const offered = safeNumber(d.amount_offered);
+        const sold = safeNumber(d.amount_sold);
+        const sellThrough = offered && sold !== null ? (sold / offered) : null;
+        const demand = classifyDemand(sellThrough, d.bid_to_cover);
+        return `
+            <tr>
+                <td>${d.date}</td>
+                <td>${d.instrument_type}</td>
+                <td>${d.tenor_label}</td>
+                <td>${formatBnVND(d.amount_offered)}</td>
+                <td>${formatBnVND(d.amount_sold)}</td>
+                <td>${sellThrough === null ? '--' : formatPct(sellThrough, 0)}</td>
+                <td>${d.bid_to_cover ? Number(d.bid_to_cover).toFixed(2) : '--'}</td>
+                <td>${d.cut_off_yield ? Number(d.cut_off_yield).toFixed(3) + '%' : '--'}</td>
+                <td>${d.avg_yield ? Number(d.avg_yield).toFixed(3) + '%' : '--'}</td>
+                <td><span class="status-badge ${demand.klass}">${demand.label}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function updateInsights(data) {
+    const elTotalSold = document.getElementById('kpiTotalSold');
+    const elTotalSoldNote = document.getElementById('kpiTotalSoldNote');
+    const elSellThrough = document.getElementById('kpiSellThrough');
+    const elSellThroughNote = document.getElementById('kpiSellThroughNote');
+    const elBidToCover = document.getElementById('kpiBidToCover');
+    const elBidToCoverNote = document.getElementById('kpiBidToCoverNote');
+    const elCutoff = document.getElementById('kpiCutoff');
+    const elCutoffNote = document.getElementById('kpiCutoffNote');
+    const elLatestDate = document.getElementById('kpiLatestDate');
+    const elDemand = document.getElementById('kpiDemand');
+
+    if (!data || data.length === 0) {
+        elTotalSold.textContent = '--';
+        elTotalSoldNote.textContent = '';
+        elSellThrough.textContent = '--';
+        elSellThroughNote.textContent = '';
+        elBidToCover.textContent = '--';
+        elBidToCoverNote.textContent = '';
+        elCutoff.textContent = '--';
+        elCutoffNote.textContent = '';
+        elLatestDate.textContent = '--';
+        elDemand.innerHTML = '';
+        return;
+    }
+
+    const offeredTotal = data.reduce((acc, d) => acc + (safeNumber(d.amount_offered) || 0), 0);
+    const soldTotal = data.reduce((acc, d) => acc + (safeNumber(d.amount_sold) || 0), 0);
+    const sellThrough = offeredTotal > 0 ? soldTotal / offeredTotal : null;
+
+    // Weighted averages (by offered/sold so big auctions matter more)
+    const wAvg = (rows, valueKey, weightKey) => {
+        let wSum = 0;
+        let vSum = 0;
+        for (const d of rows) {
+            const v = safeNumber(d[valueKey]);
+            const w = safeNumber(d[weightKey]);
+            if (v === null || w === null || w <= 0) continue;
+            wSum += w;
+            vSum += v * w;
+        }
+        return wSum > 0 ? vSum / wSum : null;
+    };
+
+    const avgBtc = wAvg(data, 'bid_to_cover', 'amount_offered');
+    const avgCutoff = wAvg(data, 'cut_off_yield', 'amount_sold');
+
+    const latestDate = data.reduce((m, d) => (d.date && d.date > m ? d.date : m), data[0].date || '');
+    const latestRows = data.filter(d => d.date === latestDate);
+    const latestOffered = latestRows.reduce((acc, d) => acc + (safeNumber(d.amount_offered) || 0), 0);
+    const latestSold = latestRows.reduce((acc, d) => acc + (safeNumber(d.amount_sold) || 0), 0);
+    const latestSellThrough = latestOffered > 0 ? latestSold / latestOffered : null;
+    const latestBtc = wAvg(latestRows, 'bid_to_cover', 'amount_offered');
+    const latestDemand = classifyDemand(latestSellThrough, latestBtc !== null ? latestBtc : avgBtc);
+
+    elTotalSold.textContent = formatBnVND(soldTotal) + ' B';
+    elTotalSoldNote.textContent = 'Billion VND sold';
+
+    elSellThrough.textContent = sellThrough === null ? '--' : formatPct(sellThrough, 0);
+    elSellThroughNote.textContent = sellThrough === null ? '' : 'Sold / Offered';
+
+    elBidToCover.textContent = avgBtc === null ? '--' : avgBtc.toFixed(2) + 'x';
+    elBidToCoverNote.textContent = 'Weighted by offered';
+
+    elCutoff.textContent = avgCutoff === null ? '--' : avgCutoff.toFixed(2) + '%';
+    elCutoffNote.textContent = 'Weighted by sold';
+
+    elLatestDate.textContent = latestDate || '--';
+    elDemand.innerHTML = `<span class="status-badge ${latestDemand.klass}">${latestDemand.label} demand</span>`;
+}
+
+function updateChart(data) {
+    // Group by date and tenor
+    const grouped = {};
+    const tenors = new Set();
+
+    data.forEach(d => {
+        if (!grouped[d.date]) {
+            grouped[d.date] = {};
+        }
+        grouped[d.date][d.tenor_label] = (d.amount_sold || 0) / 1000000000;
+        tenors.add(d.tenor_label);
+    });
+
+    const dates = Object.keys(grouped).sort();
+    const colors = [
+        'rgba(54, 162, 235, 0.8)',
+        'rgba(255, 99, 132, 0.8)',
+        'rgba(75, 192, 192, 0.8)',
+        'rgba(255, 206, 86, 0.8)',
+        'rgba(153, 102, 255, 0.8)',
+        'rgba(255, 159, 64, 0.8)'
+    ];
+
+    const datasets = Array.from(tenors).sort().map((tenor, i) => ({
+        label: tenor,
+        data: dates.map(date => grouped[date][tenor] || 0),
+        borderColor: colors[i % colors.length],
+        backgroundColor: colors[i % colors.length].replace('0.8', '0.2'),
+        tension: 0.1
+    }));
+
+    if (auctionChart) {
+        auctionChart.destroy();
+    }
+
+	    const ctx = document.getElementById('auctionChart').getContext('2d');
+	    auctionChart = new Chart(ctx, {
+	        type: 'line',
+	        data: {
+	            labels: dates,
+	            datasets: datasets
+	        },
+	        options: {
+	            responsive: true,
+	            maintainAspectRatio: false,
+	            plugins: {
+	                title: {
+	                    display: true,
+	                    text: 'Amount Sold by Tenor (Billion VND)'
+	                },
+	                legend: {
+	                }
+	            },
+	            scales: {
+	                x: {},
+	                y: {
+	                    title: {
+	                        display: true,
+	                        text: 'Billion VND'
+	                    }
+	                }
+	            }
+	        }
+	    });
+	}
+
+// Event listeners
+document.getElementById('filterForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadAuctions();
+});
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', () => {
+    // Set default dates (last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+    document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+
+    loadAuctions();
+});
+</script>
+{% endblock %}

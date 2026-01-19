@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Yield Curve - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Government Bond Yield Curve</h1>
+    <p>View and analyze yield curve data by date</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Select Date</h2>
+        <form id="dateForm" class="flex gap-4">
+            <div class="form-group" style="margin-bottom: 0;">
+                <input type="date" id="dateInput" name="date" value="{{ selected_date or '' }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Load Data</button>
+        </form>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Yield Curve Chart</h2>
+    <div class="chart-container">
+        <canvas id="yieldCurveChart"></canvas>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Yield Data Table</h2>
+    <div class="table-container">
+        <table id="yieldTable">
+            <thead>
+                <tr>
+                    <th>Tenor</th>
+                    <th>Days</th>
+                    <th>Spot Rate (%)</th>
+                    <th>Par Yield (%)</th>
+                    <th>Annual Rate (%)</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="6" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let yieldCurveChart = null;
+
+async function loadYieldCurve(date) {
+    try {
+        const url = date ? `/api/yield-curve?date=${date}` : '/api/yield-curve/latest';
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error('Data not found for this date');
+        }
+
+        const data = await response.json();
+
+        // Update table
+        updateTable(data);
+
+        // Update chart
+        updateChart(data);
+
+    } catch (error) {
+        console.error('Error loading yield curve:', error);
+        document.querySelector('#yieldTable tbody').innerHTML =
+            '<tr><td colspan="6" class="text-center">No data available for this date</td></tr>';
+    }
+}
+
+function updateTable(data) {
+    const tbody = document.querySelector('#yieldTable tbody');
+    tbody.innerHTML = data.map(d => `
+        <tr>
+            <td>${d.tenor_label}</td>
+            <td>${d.tenor_days}</td>
+            <td>${d.spot_rate_annual ? d.spot_rate_annual.toFixed(2) + '%' : '--'}</td>
+            <td>${d.par_yield ? d.par_yield.toFixed(2) + '%' : '--'}</td>
+            <td>${d.spot_rate_annual ? d.spot_rate_annual.toFixed(2) + '%' : '--'}</td>
+            <td>${d.source}</td>
+        </tr>
+    `).join('');
+}
+
+function updateChart(data) {
+    const labels = data.map(d => d.tenor_label);
+    const yields = data.map(d => d.spot_rate_annual);
+
+    if (yieldCurveChart) {
+        yieldCurveChart.destroy();
+    }
+
+    yieldCurveChart = new Chart(document.getElementById('yieldCurveChart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Yield (%)',
+                data: yields,
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.12)',
+                borderWidth: 3,
+	                fill: true,
+	                tension: 0.4,
+	                pointRadius: 6,
+	                pointBackgroundColor: '#667eea',
+	                pointBorderColor: '#111827',
+	                pointBorderWidth: 2
+	            }]
+	        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        font: { size: 14 }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {},
+                    ticks: {}
+                },
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Form submission handler
+document.getElementById('dateForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const date = document.getElementById('dateInput').value;
+    loadYieldCurve(date);
+});
+
+// Load latest data on page load
+document.addEventListener('DOMContentLoaded', () => {
+    const initialDate = '{{ selected_date or "" }}';
+    if (initialDate) {
+        loadYieldCurve(initialDate);
+    } else {
+        loadYieldCurve();
+    }
+});
+</script>
+{% endblock %}

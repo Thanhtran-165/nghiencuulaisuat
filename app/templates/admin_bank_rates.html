@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+
+{% block title %}Lãi suất ngân hàng - Admin{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Lãi suất ngân hàng</h1>
+    <p>Lấy từ dự án con <code>Lai_suat</code> và lưu vào DB chung (<code>bank_rates</code>).</p>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-card metric-card">
+        <div class="metric-label">Ngày dữ liệu mới nhất</div>
+        <div id="latestDate" class="metric-value">--</div>
+        <div id="latestMeta" class="metric-change">Đang tải…</div>
+        <button class="btn btn-secondary mt-4" onclick="loadLatest()">Tải lại</button>
+    </div>
+
+    <div class="glass-card">
+        <h2>Chọn dữ liệu để xem</h2>
+        <div class="form-group">
+            <label for="groupSelect">Nhóm</label>
+            <select id="groupSelect"></select>
+        </div>
+        <div class="form-group">
+            <label for="seriesSelect">Loại lãi suất</label>
+            <select id="seriesSelect"></select>
+        </div>
+        <div class="form-group">
+            <label for="termSelect">Kỳ hạn</label>
+            <select id="termSelect"></select>
+        </div>
+        <div class="form-group">
+            <label for="bankSelect">Ngân hàng</label>
+            <select id="bankSelect"></select>
+        </div>
+        <div class="flex gap-4">
+            <button class="btn btn-primary" onclick="applySelection()">Xem lịch sử</button>
+            <button class="btn btn-secondary" onclick="resetSelection()">Mặc định</button>
+        </div>
+        <div id="statusBox" class="mt-4"></div>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-card">
+        <div class="flex-between">
+            <h2>Bảng lãi suất (ngày mới nhất)</h2>
+            <span id="tablePill" class="pill">--</span>
+        </div>
+        <div class="table-container">
+            <table id="latestTable">
+                <thead>
+                    <tr>
+                        <th>Ngân hàng</th>
+                        <th>Kỳ hạn</th>
+                        <th>Lãi suất (%)</th>
+                        <th>Min–Max</th>
+                        <th>Nguồn</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="5" class="text-center">Đang tải…</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <h2>Biểu đồ (lịch sử)</h2>
+        <p class="mb-4">Hiển thị theo lựa chọn bên trái (ngân hàng + loại + kỳ hạn).</p>
+        <div class="chart-container" style="height: 340px;">
+            <canvas id="historyChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<details class="glass-card">
+    <summary><strong>Tình trạng dữ liệu (ẩn/hiện)</strong></summary>
+    <div class="mt-4">
+        <p>
+            Nếu bạn chưa thấy dữ liệu:
+            vào <code>Admin → Ingest</code> và chạy <code>Backfill</code> với provider <code>lai_suat_rates</code>.
+        </p>
+        <p class="mb-4">
+            Nguồn dữ liệu gốc: <code>Lai_suat/data/rates.db</code> (SQLite).
+        </p>
+    </div>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SERIES_LABELS = {
+    deposit_online: 'Gửi online',
+    deposit_tai_quay: 'Gửi tại quầy',
+    loan_the_chap: 'Vay thế chấp',
+    loan_tin_chap: 'Vay tín chấp',
+};
+
+const GROUP_LABELS = {
+    deposit: 'Tiền gửi',
+    loan: 'Cho vay',
+};
+
+let latestRows = [];
+let historyChart = null;
+
+function el(id) { return document.getElementById(id); }
+
+function labelSeries(code) {
+    return SERIES_LABELS[code] || code;
+}
+
+function labelGroup(code) {
+    return GROUP_LABELS[code] || code;
+}
+
+function safeNumber(n) {
+    if (n === null || n === undefined || Number.isNaN(Number(n))) return null;
+    return Number(n);
+}
+
+function unique(records, key) {
+    const s = new Set();
+    for (const r of records) s.add(String(r[key]));
+    return Array.from(s);
+}
+
+function setOptions(selectEl, options, {labelFn, includeAll=false, allLabel='Tất cả', allValue='' } = {}) {
+    const current = selectEl.value;
+    const items = [];
+    if (includeAll) items.push({value: allValue, label: allLabel});
+    for (const opt of options) {
+        items.push({value: opt, label: labelFn ? labelFn(opt) : opt});
+    }
+
+    selectEl.innerHTML = items.map(i => `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+    if (items.some(i => i.value === current)) selectEl.value = current;
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatTerm(r) {
+    if (r.term_label) return r.term_label;
+    if (r.term_months === -1) return '—';
+    return `${r.term_months} tháng`;
+}
+
+function formatRate(r) {
+    const v = safeNumber(r.rate_pct);
+    if (v === null) return '—';
+    return v.toFixed(2);
+}
+
+function formatMinMax(r) {
+    const min = safeNumber(r.rate_min_pct);
+    const max = safeNumber(r.rate_max_pct);
+    if (min === null && max === null) return '—';
+    if (min !== null && max !== null) return `${min.toFixed(2)} – ${max.toFixed(2)}`;
+    return (min ?? max).toFixed(2);
+}
+
+function filterLatest() {
+    const group = el('groupSelect').value;
+    const series = el('seriesSelect').value;
+    const term = el('termSelect').value;
+    const bank = el('bankSelect').value;
+
+    return latestRows.filter(r => {
+        if (group && r.product_group !== group) return false;
+        if (series && r.series_code !== series) return false;
+        if (term && String(r.term_months) !== String(term)) return false;
+        if (bank && r.bank_name !== bank) return false;
+        return true;
+    });
+}
+
+function renderLatestTable(rows) {
+    const tbody = el('latestTable').querySelector('tbody');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Không có dữ liệu theo lựa chọn hiện tại.</td></tr>';
+        el('tablePill').textContent = '0 dòng';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(r => {
+        const url = r.source_url ? `<a href="${escapeHtml(r.source_url)}" target="_blank" rel="noopener">Link</a>` : '—';
+        return `
+            <tr>
+                <td>${escapeHtml(r.bank_name)}</td>
+                <td>${escapeHtml(formatTerm(r))}</td>
+                <td>${escapeHtml(formatRate(r))}</td>
+                <td>${escapeHtml(formatMinMax(r))}</td>
+                <td>${url}</td>
+            </tr>
+        `;
+    }).join('');
+
+    el('tablePill').textContent = `${rows.length} dòng`;
+}
+
+function defaultSelection() {
+    const groups = unique(latestRows, 'product_group').sort();
+    const group = groups.includes('deposit') ? 'deposit' : (groups[0] || '');
+    el('groupSelect').value = group;
+
+    const seriesCodes = latestRows.filter(r => r.product_group === group).map(r => r.series_code);
+    const series = (seriesCodes.includes('deposit_online') ? 'deposit_online' : seriesCodes[0]) || '';
+    el('seriesSelect').value = series;
+
+    const terms = latestRows
+        .filter(r => r.product_group === group && r.series_code === series)
+        .map(r => String(r.term_months))
+        .filter(v => v !== '-1');
+    el('termSelect').value = (terms.sort((a,b)=>Number(a)-Number(b))[0]) || '';
+
+    const banks = latestRows
+        .filter(r => r.product_group === group && r.series_code === series)
+        .map(r => r.bank_name)
+        .sort((a,b)=>a.localeCompare(b, 'vi'));
+    el('bankSelect').value = banks[0] || '';
+}
+
+function refreshSelects() {
+    const groups = unique(latestRows, 'product_group').sort();
+    setOptions(el('groupSelect'), groups, {labelFn: labelGroup});
+
+    const currentGroup = el('groupSelect').value || groups[0] || '';
+    const series = unique(latestRows.filter(r => r.product_group === currentGroup), 'series_code').sort();
+    setOptions(el('seriesSelect'), series, {labelFn: labelSeries});
+
+    const currentSeries = el('seriesSelect').value || series[0] || '';
+    const terms = unique(
+        latestRows.filter(r => r.product_group === currentGroup && r.series_code === currentSeries && String(r.term_months) !== '-1'),
+        'term_months'
+    ).sort((a,b)=>Number(a)-Number(b));
+    setOptions(el('termSelect'), terms, {labelFn: (m)=>`${m} tháng`});
+
+    const banks = unique(latestRows.filter(r => r.product_group === currentGroup && r.series_code === currentSeries), 'bank_name')
+        .sort((a,b)=>a.localeCompare(b, 'vi'));
+    setOptions(el('bankSelect'), banks);
+}
+
+function wireDependentSelects() {
+    el('groupSelect').addEventListener('change', () => {
+        refreshSelects();
+        renderLatestTable(filterLatest());
+    });
+    el('seriesSelect').addEventListener('change', () => {
+        refreshSelects();
+        renderLatestTable(filterLatest());
+    });
+    el('termSelect').addEventListener('change', () => renderLatestTable(filterLatest()));
+    el('bankSelect').addEventListener('change', () => renderLatestTable(filterLatest()));
+}
+
+function setStatus(msg, kind='') {
+    const box = el('statusBox');
+    if (!msg) { box.innerHTML = ''; return; }
+    const klass = kind ? `status-badge status-${kind}` : 'pill';
+    box.innerHTML = `<span class="${klass}">${escapeHtml(msg)}</span>`;
+}
+
+async function loadLatest() {
+    setStatus('Đang tải dữ liệu…');
+    try {
+        const res = await fetch('/api/bank-rates/latest');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        latestRows = await res.json();
+
+        if (!latestRows.length) {
+            el('latestDate').textContent = '--';
+            el('latestMeta').textContent = 'Chưa có dữ liệu trong bảng bank_rates';
+            refreshSelects();
+            renderLatestTable([]);
+            setStatus('Chưa có dữ liệu. Hãy chạy backfill provider lai_suat_rates.', 'failed');
+            return;
+        }
+
+        const latestDate = latestRows[0].date;
+        el('latestDate').textContent = latestDate;
+        const bankCount = new Set(latestRows.map(r => r.bank_name)).size;
+        const seriesCount = new Set(latestRows.map(r => r.series_code)).size;
+        el('latestMeta').textContent = `${bankCount} ngân hàng • ${seriesCount} loại • ${latestRows.length} dòng`;
+
+        refreshSelects();
+        defaultSelection();
+        renderLatestTable(filterLatest());
+        setStatus('');
+    } catch (e) {
+        console.error(e);
+        setStatus(`Lỗi tải dữ liệu: ${e.message}`, 'failed');
+    }
+}
+
+async function applySelection() {
+    const bank = el('bankSelect').value;
+    const series = el('seriesSelect').value;
+    const term = el('termSelect').value;
+
+    if (!bank || !series || !term) {
+        setStatus('Vui lòng chọn đủ: ngân hàng + loại + kỳ hạn.', 'failed');
+        return;
+    }
+
+    setStatus('Đang tải lịch sử…', 'running');
+    try {
+        const params = new URLSearchParams({
+            bank_name: bank,
+            series_code: series,
+            term_months: term,
+        });
+        const res = await fetch(`/api/bank-rates/history?${params.toString()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const rows = await res.json();
+        renderHistoryChart(rows, {bank, series, term});
+        setStatus(`Đã tải lịch sử: ${rows.length} ngày`, 'completed');
+    } catch (e) {
+        console.error(e);
+        setStatus(`Lỗi tải lịch sử: ${e.message}`, 'failed');
+    }
+}
+
+function resetSelection() {
+    if (!latestRows.length) return;
+    defaultSelection();
+    renderLatestTable(filterLatest());
+    applySelection();
+}
+
+function renderHistoryChart(rows, {bank, series, term}) {
+    const ctx = el('historyChart').getContext('2d');
+    const sorted = rows.slice().sort((a,b) => String(a.date).localeCompare(String(b.date)));
+    const labels = sorted.map(r => r.date);
+    const values = sorted.map(r => safeNumber(r.rate_pct));
+
+    const title = `${bank} • ${labelSeries(series)} • ${term} tháng`;
+
+    if (historyChart) historyChart.destroy();
+    historyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: title,
+                data: values,
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102,126,234,0.14)',
+                tension: 0.25,
+                pointRadius: 3,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true },
+                tooltip: { mode: 'index', intersect: false },
+            },
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: {
+                    title: { display: true, text: 'Lãi suất (%)' },
+                },
+                x: {
+                    ticks: { maxRotation: 45, minRotation: 45 },
+                }
+            },
+        },
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    wireDependentSelects();
+    loadLatest();
+});
+</script>
+{% endblock %}
+

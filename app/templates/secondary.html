@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+
+{% block title %}Secondary Trading - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Secondary Market Trading</h1>
+    <p>Diễn giải dễ hiểu về mức độ giao dịch trên thị trường thứ cấp</p>
+</div>
+
+<div class="glass-card">
+    <div class="flex-between">
+        <h2>Filters</h2>
+        <form id="filterForm" class="flex gap-4 flex-wrap">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" name="start_date" value="{{ start_date or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" name="end_date" value="{{ end_date or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="segment">Segment (nhóm dữ liệu):</label>
+                <select id="segment" name="segment">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="bucket">Category (phân loại):</label>
+                <select id="bucket" name="bucket">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+        </form>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <div class="flex-between" style="gap: 16px; align-items: flex-start;">
+        <div style="flex: 1;">
+            <h2>At a glance</h2>
+            <p class="text-muted" style="margin-top: 6px;">
+                Tóm tắt “thị trường hôm nay sôi động hay trầm lắng” dựa trên giá trị giao dịch.
+            </p>
+        </div>
+        <details style="flex: 1;">
+            <summary style="cursor: pointer; font-weight: 600;">Giải thích nhanh</summary>
+            <div style="margin-top: 10px; color: var(--text-secondary); line-height: 1.6;">
+                <div><b>Value</b>: tổng giá trị giao dịch (VND).</div>
+                <div><b>Volume</b>: tổng khối lượng giao dịch (đơn vị theo nguồn).</div>
+                <div><b>Segment/Category</b>: tuỳ nguồn có thể là loại giao dịch (Outright/Repo/...) hoặc nhóm thống kê.</div>
+                <div><b>Activity</b>: so sánh “ngày mới nhất” với mức trung bình 20 ngày gần nhất.</div>
+            </div>
+        </details>
+    </div>
+
+    <div class="dashboard-grid" style="margin-top: 18px;">
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Latest Date</div>
+            <div class="metric-value" id="kpiLatestDate">--</div>
+            <div class="metric-change" id="kpiActivity"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Latest Total Value</div>
+            <div class="metric-value" id="kpiLatestValue">--</div>
+            <div class="metric-change" id="kpiDoD"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">20D Avg Value</div>
+            <div class="metric-value" id="kpiAvg20">--</div>
+            <div class="metric-change" id="kpiVsAvg"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Top Category</div>
+            <div class="metric-value" id="kpiTopCategory">--</div>
+            <div class="metric-change" id="kpiTopShare"></div>
+        </div>
+        <div class="glass-card metric-card" style="margin-bottom: 0;">
+            <div class="metric-label">Avg Yield</div>
+            <div class="metric-value" id="kpiAvgYield">--</div>
+            <div class="metric-change" id="kpiAvgYieldNote"></div>
+        </div>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Trading Value Over Time</h2>
+    <div class="chart-container">
+        <canvas id="tradingChart"></canvas>
+    </div>
+</div>
+
+<div class="glass-card mt-4">
+    <h2>Daily Summary</h2>
+    <div class="table-container">
+        <table id="summaryTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Total Value (B VND)</th>
+                    <th>Total Volume</th>
+                    <th>Top Category</th>
+                    <th>Avg Yield (%)</th>
+                    <th>Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="6" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <details style="margin-top: 14px;">
+        <summary style="cursor: pointer; font-weight: 600;">Raw breakdown (chi tiết theo Segment/Category)</summary>
+        <div class="table-container" style="margin-top: 10px;">
+            <table id="tradingTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Segment</th>
+                    <th>Category</th>
+                    <th>Volume (B VND)</th>
+                    <th>Value (B VND)</th>
+                    <th>Avg Yield (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="6" class="text-center">Loading...</td>
+                </tr>
+            </tbody>
+            </table>
+        </div>
+    </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let tradingChart = null;
+
+function safeNumber(x) {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : null;
+}
+
+function formatBnVND(value) {
+    const n = safeNumber(value);
+    if (n === null) return '--';
+    return (n / 1000000000).toFixed(1);
+}
+
+function formatPct(x, digits = 2) {
+    const n = safeNumber(x);
+    if (n === null) return '--';
+    return n.toFixed(digits) + '%';
+}
+
+function classifyActivity(latestValue, avg20) {
+    const v = safeNumber(latestValue);
+    const a = safeNumber(avg20);
+    if (v === null || a === null || a <= 0) return { label: 'Unknown', klass: 'status-running' };
+    if (v >= a * 1.5) return { label: 'High', klass: 'status-completed' };
+    if (v <= a * 0.7) return { label: 'Low', klass: 'status-failed' };
+    return { label: 'Normal', klass: 'status-running' };
+}
+
+function setOptions(selectEl, values, selectedValue) {
+    const keep = selectedValue ?? selectEl.value ?? '';
+    const current = new Set(Array.from(selectEl.options).map(o => o.value));
+    for (const v of values) {
+        if (!current.has(v)) {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            selectEl.appendChild(opt);
+        }
+    }
+    // Remove old dynamic options not in values (keep "All" = '')
+    const allowed = new Set(['', ...values]);
+    for (const opt of Array.from(selectEl.options)) {
+        if (!allowed.has(opt.value)) opt.remove();
+    }
+    selectEl.value = keep;
+}
+
+async function loadTrading() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const segment = document.getElementById('segment').value;
+    const bucket = document.getElementById('bucket').value;
+
+    try {
+        const params = new URLSearchParams({
+            start_date: startDate || new Date().toISOString().split('T')[0],
+            end_date: endDate || new Date().toISOString().split('T')[0]
+        });
+
+        if (segment) params.append('segment', segment);
+        if (bucket) params.append('bucket', bucket);
+
+        const response = await fetch(`/api/secondary/range?${params}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load trading data');
+        }
+
+        const data = await response.json();
+
+        // Populate filter options from actual data (avoids mismatch when provider labels change)
+        const segments = Array.from(new Set(data.map(d => d.segment).filter(Boolean))).sort();
+        const buckets = Array.from(new Set(data.map(d => (d.bucket_display || d.bucket_label)).filter(Boolean))).sort();
+        setOptions(document.getElementById('segment'), segments, segment);
+        setOptions(document.getElementById('bucket'), buckets, bucket);
+
+        // Update table
+        updateRawTable(data);
+
+        // Update summary + insights
+        updateSummary(data);
+        updateInsights(data);
+
+        // Update chart
+        updateChart(data);
+
+    } catch (error) {
+        console.error('Error loading trading data:', error);
+        document.querySelector('#tradingTable tbody').innerHTML =
+            '<tr><td colspan="6" class="text-center">No data available for selected filters</td></tr>';
+    }
+}
+
+function updateRawTable(data) {
+    const tbody = document.querySelector('#tradingTable tbody');
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No data found</td></tr>';
+        return;
+    }
+
+    const rows = [...data].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    tbody.innerHTML = rows.map(d => `
+        <tr>
+            <td>${d.date}</td>
+            <td>${d.segment}</td>
+            <td>${d.bucket_display || d.bucket_label}</td>
+            <td>${d.volume ? (Number(d.volume) / 1000000000).toFixed(1) : '--'}</td>
+            <td>${d.value ? (Number(d.value) / 1000000000).toFixed(1) : '--'}</td>
+            <td>${d.avg_yield ? Number(d.avg_yield).toFixed(3) + '%' : '--'}</td>
+        </tr>
+    `).join('');
+}
+
+function computeDailyTotals(data) {
+    const byDate = new Map();
+    for (const d of data) {
+        const dt = d.date;
+        if (!dt) continue;
+        const row = byDate.get(dt) || { date: dt, value: 0, volume: 0, yieldNum: 0, yieldDen: 0, buckets: new Map() };
+        const v = safeNumber(d.value) || 0;
+        const vol = safeNumber(d.volume) || 0;
+        row.value += v;
+        row.volume += vol;
+        const y = safeNumber(d.avg_yield);
+        if (y !== null && v > 0) {
+            row.yieldNum += y * v;
+            row.yieldDen += v;
+        }
+        const b = (d.bucket_display || d.bucket_label) || '';
+        if (b) row.buckets.set(b, (row.buckets.get(b) || 0) + v);
+        byDate.set(dt, row);
+    }
+    const out = Array.from(byDate.values()).map(r => ({
+        date: r.date,
+        value: r.value,
+        volume: r.volume,
+        avg_yield: r.yieldDen > 0 ? r.yieldNum / r.yieldDen : null,
+        buckets: r.buckets
+    }));
+    out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    return out;
+}
+
+function updateSummary(data) {
+    const tbody = document.querySelector('#summaryTable tbody');
+    const daily = computeDailyTotals(data);
+    if (daily.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No data found</td></tr>';
+        return;
+    }
+
+    // For activity badge per day, compare to trailing 20d avg (computed on daily series)
+    const dailyAsc = [...daily].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const avg20At = new Map();
+    for (let i = 0; i < dailyAsc.length; i++) {
+        const slice = dailyAsc.slice(Math.max(0, i - 19), i + 1);
+        const avg = slice.reduce((acc, r) => acc + (safeNumber(r.value) || 0), 0) / slice.length;
+        avg20At.set(dailyAsc[i].date, avg);
+    }
+
+    tbody.innerHTML = daily.slice(0, 30).map(r => {
+        let topCategory = '--';
+        let topShare = null;
+        if (r.buckets && r.buckets.size > 0 && r.value > 0) {
+            const top = Array.from(r.buckets.entries()).sort((a, b) => b[1] - a[1])[0];
+            topCategory = top[0];
+            topShare = top[1] / r.value;
+        }
+        const avg20 = avg20At.get(r.date);
+        const act = classifyActivity(r.value, avg20);
+        return `
+            <tr>
+                <td>${r.date}</td>
+                <td>${formatBnVND(r.value)}</td>
+                <td>${r.volume ? (r.volume / 1000000000).toFixed(1) : '--'}</td>
+                <td>${topCategory}${topShare === null ? '' : ` <span class="pill">${(topShare * 100).toFixed(0)}%</span>`}</td>
+                <td>${r.avg_yield === null ? '--' : formatPct(r.avg_yield, 2)}</td>
+                <td><span class="status-badge ${act.klass}">${act.label}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function updateInsights(data) {
+    const elLatestDate = document.getElementById('kpiLatestDate');
+    const elActivity = document.getElementById('kpiActivity');
+    const elLatestValue = document.getElementById('kpiLatestValue');
+    const elDoD = document.getElementById('kpiDoD');
+    const elAvg20 = document.getElementById('kpiAvg20');
+    const elVsAvg = document.getElementById('kpiVsAvg');
+    const elTopCategory = document.getElementById('kpiTopCategory');
+    const elTopShare = document.getElementById('kpiTopShare');
+    const elAvgYield = document.getElementById('kpiAvgYield');
+    const elAvgYieldNote = document.getElementById('kpiAvgYieldNote');
+
+    const daily = computeDailyTotals(data);
+    if (daily.length === 0) {
+        elLatestDate.textContent = '--';
+        elActivity.innerHTML = '';
+        elLatestValue.textContent = '--';
+        elDoD.textContent = '';
+        elAvg20.textContent = '--';
+        elVsAvg.textContent = '';
+        elTopCategory.textContent = '--';
+        elTopShare.textContent = '';
+        elAvgYield.textContent = '--';
+        elAvgYieldNote.textContent = '';
+        return;
+    }
+
+    const latest = daily[0];
+    const prev = daily[1] || null;
+    const dailyAsc = [...daily].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const last20 = dailyAsc.slice(Math.max(0, dailyAsc.length - 20));
+    const avg20 = last20.reduce((acc, r) => acc + (safeNumber(r.value) || 0), 0) / last20.length;
+
+    elLatestDate.textContent = latest.date;
+    const act = classifyActivity(latest.value, avg20);
+    elActivity.innerHTML = `<span class="status-badge ${act.klass}">${act.label} activity</span>`;
+
+    elLatestValue.textContent = formatBnVND(latest.value) + ' B';
+    if (prev && prev.value > 0) {
+        const chg = (latest.value - prev.value) / prev.value;
+        elDoD.textContent = `Day-over-day: ${(chg * 100).toFixed(0)}%`;
+        elDoD.className = 'metric-change ' + (chg >= 0 ? 'positive' : 'negative');
+    } else {
+        elDoD.textContent = '';
+        elDoD.className = 'metric-change';
+    }
+
+    elAvg20.textContent = formatBnVND(avg20) + ' B';
+    if (avg20 > 0) {
+        const vs = (latest.value - avg20) / avg20;
+        elVsAvg.textContent = `vs 20D avg: ${(vs * 100).toFixed(0)}%`;
+        elVsAvg.className = 'metric-change ' + (vs >= 0 ? 'positive' : 'negative');
+    } else {
+        elVsAvg.textContent = '';
+        elVsAvg.className = 'metric-change';
+    }
+
+    let topCategory = '--';
+    let topShare = null;
+    if (latest.buckets && latest.buckets.size > 0 && latest.value > 0) {
+        const top = Array.from(latest.buckets.entries()).sort((a, b) => b[1] - a[1])[0];
+        topCategory = top[0];
+        topShare = top[1] / latest.value;
+    }
+    elTopCategory.textContent = topCategory;
+    elTopShare.textContent = topShare === null ? '' : `Share: ${(topShare * 100).toFixed(0)}%`;
+
+    elAvgYield.textContent = latest.avg_yield === null ? '--' : latest.avg_yield.toFixed(2) + '%';
+    elAvgYieldNote.textContent = latest.avg_yield === null ? '' : 'Value-weighted';
+}
+
+function updateChart(data) {
+    // Group by date and bucket
+    const grouped = {};
+    const buckets = new Set();
+
+    data.forEach(d => {
+        if (!grouped[d.date]) {
+            grouped[d.date] = {};
+        }
+        grouped[d.date][d.bucket_label] = (d.value || 0) / 1000000000;
+        buckets.add(d.bucket_label);
+    });
+
+    const dates = Object.keys(grouped).sort();
+    const colors = [
+        'rgba(54, 162, 235, 0.8)',
+        'rgba(255, 99, 132, 0.8)',
+        'rgba(75, 192, 192, 0.8)',
+        'rgba(255, 206, 86, 0.8)',
+        'rgba(153, 102, 255, 0.8)'
+    ];
+
+    const datasets = Array.from(buckets).sort().map((bucket, i) => ({
+        label: bucket,
+        data: dates.map(date => grouped[date][bucket] || 0),
+        borderColor: colors[i % colors.length],
+        backgroundColor: colors[i % colors.length].replace('0.8', '0.2'),
+        tension: 0.1,
+        fill: true
+    }));
+
+    // Add total line for easier reading
+    const totals = dates.map(dt => {
+        const o = grouped[dt] || {};
+        return Object.values(o).reduce((acc, v) => acc + (safeNumber(v) || 0), 0);
+    });
+    datasets.unshift({
+        label: 'Total',
+        data: totals,
+        borderColor: 'rgba(17, 24, 39, 0.85)',
+        backgroundColor: 'rgba(17, 24, 39, 0.00)',
+        borderWidth: 3,
+        pointRadius: 0,
+        tension: 0.15,
+        fill: false
+    });
+
+    if (tradingChart) {
+        tradingChart.destroy();
+    }
+
+	    const ctx = document.getElementById('tradingChart').getContext('2d');
+	    tradingChart = new Chart(ctx, {
+	        type: 'line',
+	        data: {
+	            labels: dates,
+	            datasets: datasets
+	        },
+	        options: {
+	            responsive: true,
+	            maintainAspectRatio: false,
+	            plugins: {
+	                title: {
+	                    display: true,
+	                    text: 'Trading Value by Investor Type (Billion VND)'
+	                },
+	                legend: {
+	                }
+	            },
+	            scales: {
+	                x: {},
+	                y: {
+	                    title: {
+	                        display: true,
+	                        text: 'Billion VND'
+	                    },
+	                    stacked: false
+	                }
+	            }
+	        }
+	    });
+	}
+
+// Event listeners
+document.getElementById('filterForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadTrading();
+});
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', () => {
+    // Set default dates (last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+    document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+
+    loadTrading();
+});
+</script>
+{% endblock %}

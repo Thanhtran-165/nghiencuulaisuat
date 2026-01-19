@@ -1,0 +1,671 @@
+{% extends "base.html" %}
+
+{% block title %}Transmission Analytics - VN Bond Lab{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Bond Transmission Analytics</h1>
+    <p>Market regime analysis and stress monitoring</p>
+</div>
+
+<!-- Today's Regime Card -->
+<div class="glass-card regime-card mb-4">
+    <h2>Today's Regime</h2>
+    <div id="regime-display">
+        <div class="regime-score" id="regime-bucket">Loading...</div>
+        <div class="regime-value" id="regime-score">--</div>
+        <div class="regime-description" id="regime-explanation">Loading latest data...</div>
+    </div>
+</div>
+
+<!-- Data Availability Warning -->
+<div id="data-warning" class="glass-card warning-card" style="display: none;">
+    <h3>⚠️ Data Availability Warning</h3>
+    <p id="warning-message">Some datasets may be incomplete</p>
+</div>
+
+<!-- Top Drivers Panel -->
+<div class="glass-card mb-4">
+    <h2>Top Drivers</h2>
+    <div id="drivers-panel" class="drivers-grid">
+        <div class="driver-item">
+            <div class="driver-name">Loading...</div>
+            <div class="driver-contribution">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Grid -->
+<div class="dashboard-grid mb-4">
+    <!-- Transmission Score Time Series -->
+    <div class="glass-card">
+        <h3>Transmission Score (60-Day History)</h3>
+        <div class="chart-container">
+            <canvas id="scoreChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Interbank ON vs 10Y Yield -->
+    <div class="glass-card">
+        <h3>Interbank ON vs 10Y Yield</h3>
+        <div class="chart-container">
+            <canvas id="ibVsYieldChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-grid mb-4">
+    <!-- Auction Totals -->
+    <div class="glass-card">
+        <h3>Auction Volume (5-Day Sum)</h3>
+        <div class="chart-container">
+            <canvas id="auctionChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Secondary Trading Totals -->
+    <div class="glass-card">
+        <h3>Secondary Trading Value (5-Day Sum)</h3>
+        <div class="chart-container">
+            <canvas id="secondaryChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-grid mb-4">
+    <!-- Realized Volatility -->
+    <div class="glass-card">
+        <h3>10Y Realized Volatility (20 Obs, bps)</h3>
+        <div class="chart-container">
+            <canvas id="volatilityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Rolling Correlation -->
+    <div class="glass-card">
+        <h3>Rolling Corr: Δ10Y vs ΔIB ON (20 Obs)</h3>
+        <div class="chart-container">
+            <canvas id="corrChart"></canvas>
+        </div>
+        <div id="corr-empty" style="display:none; margin-top: 10px; color: var(--text-secondary); font-size: 0.9rem;">
+            Not enough interbank history yet to compute correlation (needs ~20 overlapping observations). This will fill automatically as IB data accumulates daily.
+        </div>
+    </div>
+</div>
+
+<!-- Alerts Table -->
+<div class="glass-card">
+    <h2>Recent Alerts (Last 30 Days)</h2>
+    <div class="table-container">
+        <table class="alerts-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Severity</th>
+                    <th>Type</th>
+                    <th>Message</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody id="alerts-table-body">
+                <tr>
+                    <td colspan="5">Loading alerts...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.regime-card {
+    text-align: center;
+    padding: 2rem;
+}
+
+.regime-score {
+    font-size: 4rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.regime-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.regime-description {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.warning-card {
+    background: rgba(245, 158, 11, 0.12) !important;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    margin-bottom: 1.5rem;
+}
+
+.drivers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.driver-item {
+    background: var(--surface-muted);
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.driver-name {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.driver-contribution {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+.alerts-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.alerts-table th,
+.alerts-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(17, 24, 39, 0.10);
+}
+
+.alerts-table th {
+    background: var(--surface-muted);
+    font-weight: 600;
+}
+
+.alerts-table tbody tr:hover {
+    background: rgba(102, 126, 234, 0.06);
+}
+
+.severity-high {
+    color: var(--danger);
+}
+
+.severity-medium {
+    color: var(--warning);
+}
+
+.severity-low {
+    color: var(--success);
+}
+</style>
+
+<script>
+// Bucket colors
+const bucketColors = {
+    'B0': { bg: '#81c784', text: 'Very Easy - Accommodative conditions' },
+    'B1': { bg: '#a5d6a7', text: 'Easy - Supportive liquidity' },
+    'B2': { bg: '#fff59d', text: 'Neutral - Balanced market' },
+    'B3': { bg: '#ffcc80', text: 'Tight - Stress building' },
+    'B4': { bg: '#ef5350', text: 'Very Tight - High stress' }
+};
+
+function normalizeSeries(records, maxPoints) {
+    if (!Array.isArray(records)) return [];
+    const sorted = records
+        .filter(r => r && r.date)
+        .map(r => ({ ...r, date: String(r.date) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    if (maxPoints && sorted.length > maxPoints) {
+        return sorted.slice(sorted.length - maxPoints);
+    }
+    return sorted;
+}
+
+function buildAlignedSeries(recordsByName, maxPoints) {
+    const allDates = new Set();
+    for (const series of Object.values(recordsByName)) {
+        for (const row of series) allDates.add(String(row.date));
+    }
+    const labelsAll = Array.from(allDates).sort();
+    const labels = (maxPoints && labelsAll.length > maxPoints)
+        ? labelsAll.slice(labelsAll.length - maxPoints)
+        : labelsAll;
+
+    const maps = {};
+    for (const [name, series] of Object.entries(recordsByName)) {
+        maps[name] = new Map(series.map(r => [String(r.date), r.metric_value]));
+    }
+
+    const aligned = {};
+    for (const name of Object.keys(recordsByName)) {
+        aligned[name] = labels.map(d => maps[name].has(d) ? maps[name].get(d) : null);
+    }
+    return { labels, aligned };
+}
+
+// Load latest transmission metrics
+async function loadTransmissionDashboard() {
+    try {
+        // Fetch latest metrics
+        const metricsResponse = await fetch('/api/transmission/latest');
+        const metricsData = await metricsResponse.json();
+
+        // Fetch latest alerts
+        const alertsResponse = await fetch('/api/transmission/alerts?limit=30');
+        const alertsData = await alertsResponse.json();
+
+        // Update regime display
+        updateRegimeDisplay(metricsData);
+
+        // Update drivers panel
+        updateDriversPanel(metricsData);
+
+        // Update data availability warning
+        updateDataWarning(metricsData);
+
+        // Render charts
+        await renderScoreChart();
+        await renderIbVsYieldChart();
+        await renderAuctionChart();
+        await renderSecondaryChart();
+        await renderVolatilityChart();
+        await renderCorrelationChart();
+
+        // Update alerts table
+        updateAlertsTable(alertsData);
+
+    } catch (error) {
+        console.error('Error loading transmission dashboard:', error);
+        document.getElementById('regime-bucket').textContent = 'Error';
+        document.getElementById('regime-explanation').textContent = 'Failed to load data. Please try again.';
+    }
+}
+
+// Update regime display
+function updateRegimeDisplay(metrics) {
+    const scoreMetric = metrics.find(m => m.metric_name === 'transmission_score');
+    const bucketMetric = metrics.find(m => m.metric_name === 'regime_bucket');
+
+    if (scoreMetric && scoreMetric.metric_value !== null) {
+        const score = scoreMetric.metric_value;
+        document.getElementById('regime-score').textContent = `Score: ${score.toFixed(1)}/100`;
+    }
+
+	    if (bucketMetric && (bucketMetric.metric_value_text || bucketMetric.metric_value !== null)) {
+	        const bucket = bucketMetric.metric_value_text || bucketMetric.metric_value;
+	        const bucketEl = document.getElementById('regime-bucket');
+	        bucketEl.textContent = bucket;
+	        bucketEl.style.color = bucketColors[bucket]?.bg || 'var(--text-primary)';
+
+        const explanationEl = document.getElementById('regime-explanation');
+        explanationEl.textContent = bucketColors[bucket]?.text || 'Unknown regime';
+    } else {
+        document.getElementById('regime-bucket').textContent = 'N/A';
+        document.getElementById('regime-score').textContent = '--';
+        document.getElementById('regime-explanation').textContent = 'No transmission data available';
+    }
+}
+
+// Update drivers panel
+function updateDriversPanel(metrics) {
+    const driversMetric = metrics.find(m => m.metric_name === 'top_drivers');
+    const panel = document.getElementById('drivers-panel');
+
+    if (driversMetric && driversMetric.source_components) {
+        try {
+            const sources = JSON.parse(driversMetric.source_components);
+            const drivers = sources.drivers || [];
+
+            if (drivers.length > 0) {
+                panel.innerHTML = drivers.map(driver => `
+                    <div class="driver-item">
+                        <div class="driver-name">${driver.name}</div>
+                        <div class="driver-contribution">${driver.contribution > 0 ? '+' : ''}${driver.contribution.toFixed(1)}</div>
+                    </div>
+                `).join('');
+            } else {
+                panel.innerHTML = '<div class="driver-item"><div class="driver-name">No significant drivers</div></div>';
+            }
+        } catch (e) {
+            console.error('Error parsing drivers:', e);
+            panel.innerHTML = '<div class="driver-item"><div class="driver-name">Error loading drivers</div></div>';
+        }
+    } else {
+        panel.innerHTML = '<div class="driver-item"><div class="driver-name">No drivers available</div></div>';
+    }
+}
+
+// Update data availability warning
+function updateDataWarning(metrics) {
+    const warningEl = document.getElementById('data-warning');
+    const messageEl = document.getElementById('warning-message');
+
+    const missingData = [];
+
+    const curveMetric = metrics.find(m => m.metric_name === 'level_10y');
+    if (!curveMetric || curveMetric.metric_value === null) {
+        missingData.push('Yield Curve');
+    }
+
+    // Interbank can be partially missing on weekends/holidays. Use the availability flag instead of a single tenor.
+    const liquidityAvail = metrics.find(m => m.metric_name === 'liquidity_data_available');
+    const hasLiquidity = liquidityAvail && Number(liquidityAvail.metric_value) === 1;
+    if (!hasLiquidity) {
+        missingData.push('Interbank Rates');
+    }
+
+    const auctionMetric = metrics.find(m => m.metric_name === 'auction_sold_total_5d');
+    if (!auctionMetric || auctionMetric.metric_value === null) {
+        missingData.push('Auction Data');
+    }
+
+    const secondaryMetric = metrics.find(m => m.metric_name === 'secondary_value_total_5d');
+    if (!secondaryMetric || secondaryMetric.metric_value === null) {
+        missingData.push('Secondary Trading');
+    }
+
+    if (missingData.length > 0) {
+        warningEl.style.display = 'block';
+        messageEl.textContent = `Missing or incomplete data for: ${missingData.join(', ')}. Some metrics may be unavailable.`;
+    } else {
+        warningEl.style.display = 'none';
+    }
+}
+
+// Render transmission score chart
+async function renderScoreChart() {
+    try {
+        const response = await fetch('/api/transmission/timeseries?metric_name=transmission_score&limit=120');
+        const data = normalizeSeries(await response.json(), 60);
+
+        const labels = data.map(d => d.date);
+        const scores = data.map(d => d.metric_value);
+
+		        new Chart(document.getElementById('scoreChart'), {
+	            type: 'line',
+	            data: {
+	                labels: labels,
+	                datasets: [{
+	                    label: 'Transmission Score',
+	                    data: scores,
+	                    borderColor: '#667eea',
+	                    backgroundColor: 'rgba(102, 126, 234, 0.12)',
+	                    borderWidth: 2,
+	                    fill: true,
+	                    tension: 0.4
+	                }]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                },
+	                scales: {
+	                    y: {
+	                        min: 0,
+	                        max: 100,
+	                    }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering score chart:', error);
+    }
+}
+
+// Render IB vs Yield chart
+async function renderIbVsYieldChart() {
+    try {
+        const yieldResponse = await fetch('/api/transmission/timeseries?metric_name=level_10y&limit=180');
+        const yieldData = normalizeSeries(await yieldResponse.json(), 180);
+
+        const ibResponse = await fetch('/api/transmission/timeseries?metric_name=ib_on&limit=180');
+        const ibData = normalizeSeries(await ibResponse.json(), 180);
+
+        const { labels, aligned } = buildAlignedSeries(
+            { yields: yieldData, ib: ibData },
+            60
+        );
+        const yields = aligned.yields;
+        const ibRates = aligned.ib;
+
+		        new Chart(document.getElementById('ibVsYieldChart'), {
+	            type: 'line',
+	            data: {
+	                labels: labels,
+	                datasets: [
+	                    {
+	                        label: '10Y Yield',
+	                        data: yields,
+	                        borderColor: '#667eea',
+	                        backgroundColor: 'transparent',
+	                        borderWidth: 2,
+	                        tension: 0.4,
+	                        yAxisID: 'y'
+	                    },
+	                    {
+	                        label: 'IB ON',
+	                        data: ibRates,
+	                        borderColor: '#764ba2',
+	                        backgroundColor: 'transparent',
+	                        borderWidth: 2,
+	                        tension: 0.4,
+	                        yAxisID: 'y1'
+	                    }
+	                ]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                interaction: {
+	                    mode: 'index',
+	                    intersect: false,
+	                },
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                },
+	                scales: {
+	                    y: {
+	                        type: 'linear',
+	                        display: true,
+	                        position: 'left',
+	                    },
+	                    y1: {
+	                        type: 'linear',
+	                        display: true,
+	                        position: 'right',
+	                        grid: { drawOnChartArea: false }
+	                    }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering IB vs Yield chart:', error);
+    }
+}
+
+// Render auction chart
+async function renderAuctionChart() {
+    try {
+        const response = await fetch('/api/transmission/timeseries?metric_name=auction_sold_total_5d&limit=180');
+        const data = normalizeSeries(await response.json(), 60);
+
+        const labels = data.map(d => d.date);
+        const values = data.map(d => d.metric_value);
+
+		        new Chart(document.getElementById('auctionChart'), {
+	            type: 'bar',
+	            data: {
+	                labels: labels,
+	                datasets: [{
+	                    label: 'Auction Volume (5d)',
+	                    data: values,
+	                    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+	                    borderColor: '#f59e0b',
+	                    borderWidth: 2
+	                }]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering auction chart:', error);
+    }
+}
+
+// Render secondary chart
+async function renderSecondaryChart() {
+    try {
+        const response = await fetch('/api/transmission/timeseries?metric_name=secondary_value_total_5d&limit=180');
+        const data = normalizeSeries(await response.json(), 60);
+
+        const labels = data.map(d => d.date);
+        const values = data.map(d => d.metric_value);
+
+		        new Chart(document.getElementById('secondaryChart'), {
+	            type: 'bar',
+	            data: {
+	                labels: labels,
+	                datasets: [{
+	                    label: 'Secondary Value (5d)',
+	                    data: values,
+	                    backgroundColor: 'rgba(16, 185, 129, 0.25)',
+	                    borderColor: '#10b981',
+	                    borderWidth: 2
+	                }]
+	            },
+	            options: {
+	                responsive: true,
+	                maintainAspectRatio: false,
+	                plugins: {
+	                    legend: { labels: { font: { size: 12 } } }
+	                }
+	            }
+	        });
+	    } catch (error) {
+	        console.error('Error rendering secondary chart:', error);
+    }
+}
+
+// Render realized volatility chart (10Y, 20 obs, bps)
+async function renderVolatilityChart() {
+    try {
+        const response = await fetch('/api/transmission/timeseries?metric_name=level_10y_realized_vol_20d_bps&limit=240');
+        const data = normalizeSeries(await response.json(), 90);
+        if (!data.length) return;
+
+        const labels = data.map(d => d.date);
+        const values = data.map(d => d.metric_value);
+
+        new Chart(document.getElementById('volatilityChart'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: '10Y RV (bps)',
+                    data: values,
+                    borderColor: '#f97316',
+                    backgroundColor: 'rgba(249, 115, 22, 0.12)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.35
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { font: { size: 12 } } } }
+            }
+        });
+    } catch (error) {
+        console.error('Error rendering volatility chart:', error);
+    }
+}
+
+// Render rolling correlation chart (Δ10Y vs ΔIB ON)
+async function renderCorrelationChart() {
+    try {
+        const response = await fetch('/api/transmission/timeseries?metric_name=corr_10y_ib_on_change_20d&limit=240');
+        const data = normalizeSeries(await response.json(), 90);
+        if (!data.length) return;
+
+        const labels = data.map(d => d.date);
+        const values = data.map(d => d.metric_value);
+
+        const hasAny = values.some(v => typeof v === 'number' && !Number.isNaN(v));
+        const emptyEl = document.getElementById('corr-empty');
+        if (!hasAny) {
+            if (emptyEl) emptyEl.style.display = 'block';
+            return;
+        }
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        new Chart(document.getElementById('corrChart'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Corr',
+                    data: values,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.10)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.35
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { font: { size: 12 } } } },
+                scales: {
+                    y: { min: -1, max: 1 }
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error rendering correlation chart:', error);
+    }
+}
+
+// Update alerts table
+function updateAlertsTable(alerts) {
+    const tbody = document.getElementById('alerts-table-body');
+
+    if (alerts && alerts.length > 0) {
+        tbody.innerHTML = alerts.map(alert => `
+            <tr>
+                <td>${alert.date}</td>
+                <td class="severity-${alert.severity.toLowerCase()}">${alert.severity}</td>
+                <td>${alert.alert_type}</td>
+                <td>${alert.message}</td>
+                <td>${alert.metric_value ? alert.metric_value.toFixed(2) : '--'}</td>
+            </tr>
+        `).join('');
+    } else {
+        tbody.innerHTML = '<tr><td colspan="5">No alerts in the last 30 days</td></tr>';
+    }
+}
+
+// Load dashboard on page load
+document.addEventListener('DOMContentLoaded', loadTransmissionDashboard);
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: |
+        docker compose build
+
+    - name: Run tests
+      run: |
+        docker compose run --rm app pytest -q
+
+    - name: Upload test artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: |
+          tests/
+          logs/
+          htmlcov/
+        retention-days: 7
+
+    - name: Check health endpoint
+      run: |
+        docker compose up -d
+        sleep 10
+        curl -f http://localhost:8000/healthz || exit 1
+        curl -f http://localhost:8000/readyz || exit 1
+
+    - name: Check metrics endpoint
+      run: |
+        curl -f http://localhost:8000/metrics
+
+    - name: View logs on failure
+      if: failure()
+      run: |
+        docker compose logs
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose down -v

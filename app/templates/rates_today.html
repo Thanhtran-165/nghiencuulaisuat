@@ -1,0 +1,218 @@
+{% extends "rates_layout.html" %}
+
+{% block rates_content %}
+<div class="dashboard-grid">
+    <div class="glass-card metric-card">
+        <div class="metric-label">Cập nhật gần nhất</div>
+        <div id="latestCrawl" class="metric-value">--</div>
+        <div id="latestMeta" class="metric-change">Đang tải…</div>
+    </div>
+    <div class="glass-card metric-card">
+        <div class="metric-label">Tiền gửi cao nhất (12T - Online)</div>
+        <div id="kpiDepositOnline" class="metric-value">--</div>
+        <div id="kpiDepositOnlineSub" class="metric-change">--</div>
+    </div>
+    <div class="glass-card metric-card">
+        <div class="metric-label">Tiền gửi cao nhất (12T - Tại quầy)</div>
+        <div id="kpiDepositCounter" class="metric-value">--</div>
+        <div id="kpiDepositCounterSub" class="metric-change">--</div>
+    </div>
+    <div class="glass-card metric-card">
+        <div class="metric-label">Vay thấp nhất (Thế chấp)</div>
+        <div id="kpiLoanSec" class="metric-value">--</div>
+        <div id="kpiLoanSecSub" class="metric-change">--</div>
+    </div>
+    <div class="glass-card metric-card">
+        <div class="metric-label">Vay thấp nhất (Tín chấp)</div>
+        <div id="kpiLoanUnsec" class="metric-value">--</div>
+        <div id="kpiLoanUnsecSub" class="metric-change">--</div>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="glass-card">
+        <div class="flex-between">
+            <h2>Tiền gửi</h2>
+            <div class="flex gap-4">
+                <select id="depositSeries" class="btn btn-secondary" style="padding:10px 12px;">
+                    <option value="deposit_online">Online</option>
+                    <option value="deposit_tai_quay">Tại quầy</option>
+                </select>
+                <select id="depositTerm" class="btn btn-secondary" style="padding:10px 12px;">
+                    <option value="1">1 tháng</option>
+                    <option value="3">3 tháng</option>
+                    <option value="6">6 tháng</option>
+                    <option value="12" selected>12 tháng</option>
+                    <option value="18">18 tháng</option>
+                    <option value="24">24 tháng</option>
+                    <option value="36">36 tháng</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadDeposits()">Tải</button>
+            </div>
+        </div>
+        <div class="table-container">
+            <table id="depositTable">
+                <thead>
+                    <tr>
+                        <th>Ngân hàng</th>
+                        <th>Lãi suất (%)</th>
+                        <th>Cập nhật</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="3" class="text-center">Đang tải…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <div class="flex-between">
+            <h2>Cho vay</h2>
+            <div class="flex gap-4">
+                <select id="loanSeries" class="btn btn-secondary" style="padding:10px 12px;">
+                    <option value="loan_the_chap">Thế chấp</option>
+                    <option value="loan_tin_chap">Tín chấp</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadLoans()">Tải</button>
+            </div>
+        </div>
+        <div class="table-container">
+            <table id="loanTable">
+                <thead>
+                    <tr>
+                        <th>Ngân hàng</th>
+                        <th>Thấp (%)</th>
+                        <th>Cao (%)</th>
+                        <th>Cập nhật</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4" class="text-center">Đang tải…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function el(id){ return document.getElementById(id); }
+function fmtPct(v){
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+  return Number(v).toFixed(2);
+}
+function fmtDate(s){
+  if (!s) return '—';
+  try { return new Date(s).toLocaleDateString('vi-VN'); } catch { return s; }
+}
+function maxDate(rows){
+  if (!rows || !rows.length) return null;
+  return rows[0].date;
+}
+function maxScrapedAt(rows){
+  let m = null;
+  for (const r of rows) {
+    if (!r.scraped_at) continue;
+    if (!m || String(r.scraped_at) > m) m = String(r.scraped_at);
+  }
+  return m;
+}
+
+async function loadKpis(){
+  try {
+    const [dOnline, dCounter, lSec, lUnsec, meta] = await Promise.all([
+      fetch('/api/bank-rates/latest?series_code=deposit_online&term_months=12').then(r=>r.json()),
+      fetch('/api/bank-rates/latest?series_code=deposit_tai_quay&term_months=12').then(r=>r.json()),
+      fetch('/api/bank-rates/latest?series_code=loan_the_chap').then(r=>r.json()),
+      fetch('/api/bank-rates/latest?series_code=loan_tin_chap').then(r=>r.json()),
+      fetch('/api/lai-suat/meta/latest').then(r=>r.json()).catch(()=>null),
+    ]);
+
+    const anyRows = dOnline.length ? dOnline : (dCounter.length ? dCounter : (lSec.length ? lSec : lUnsec));
+    const latest = maxDate(anyRows);
+    const latestCrawl = meta && meta.latest_scraped_at ? meta.latest_scraped_at : null;
+    el('latestCrawl').textContent = latestCrawl ? fmtDate(latestCrawl) : '--';
+
+    if (latest) {
+      const parts = [];
+      const latestDayScrape = maxScrapedAt(anyRows);
+      parts.push(`Kỳ dữ liệu (nguồn): ${fmtDate(latest)}`);
+      if (latestDayScrape) parts.push(`Scrape kỳ dữ liệu: ${fmtDate(latestDayScrape)}`);
+      if (latestCrawl) parts.push(`Crawl gần nhất: ${fmtDate(latestCrawl)}`);
+      if (latestCrawl && fmtDate(latestCrawl) !== fmtDate(latest)) parts.push('Nguồn chưa phát sinh kỳ mới');
+      el('latestMeta').textContent = parts.length ? parts.join(' • ') : 'Đã có dữ liệu';
+    } else {
+      el('latestMeta').textContent = 'Chưa có dữ liệu';
+    }
+
+    const bestOnline = dOnline.slice().sort((a,b)=> (b.rate_pct ?? -1) - (a.rate_pct ?? -1))[0];
+    el('kpiDepositOnline').textContent = bestOnline ? `${fmtPct(bestOnline.rate_pct)}%` : '--';
+    el('kpiDepositOnlineSub').textContent = bestOnline ? bestOnline.bank_name : '--';
+
+    const bestCounter = dCounter.slice().sort((a,b)=> (b.rate_pct ?? -1) - (a.rate_pct ?? -1))[0];
+    el('kpiDepositCounter').textContent = bestCounter ? `${fmtPct(bestCounter.rate_pct)}%` : '--';
+    el('kpiDepositCounterSub').textContent = bestCounter ? bestCounter.bank_name : '--';
+
+    const bestSec = lSec.slice().filter(r=>r.rate_min_pct!=null).sort((a,b)=> (a.rate_min_pct ?? 1e9) - (b.rate_min_pct ?? 1e9))[0];
+    const bestUn = lUnsec.slice().filter(r=>r.rate_min_pct!=null).sort((a,b)=> (a.rate_min_pct ?? 1e9) - (b.rate_min_pct ?? 1e9))[0];
+    el('kpiLoanSec').textContent = bestSec ? `${fmtPct(bestSec.rate_min_pct)}%` : '--';
+    el('kpiLoanSecSub').textContent = bestSec ? bestSec.bank_name : '--';
+    el('kpiLoanUnsec').textContent = bestUn ? `${fmtPct(bestUn.rate_min_pct)}%` : '--';
+    el('kpiLoanUnsecSub').textContent = bestUn ? bestUn.bank_name : '--';
+  } catch (e) {
+    el('latestMeta').textContent = 'Lỗi tải dữ liệu';
+    console.error(e);
+  }
+}
+
+async function loadDeposits(){
+  const series = el('depositSeries').value;
+  const term = el('depositTerm').value;
+  const tbody = el('depositTable').querySelector('tbody');
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center">Đang tải…</td></tr>';
+
+  const rows = await fetch(`/api/bank-rates/latest?product_group=deposit&series_code=${encodeURIComponent(series)}&term_months=${encodeURIComponent(term)}`).then(r=>r.json());
+  const sorted = rows.slice().sort((a,b)=> (b.rate_pct ?? -1) - (a.rate_pct ?? -1));
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center">Không có dữ liệu.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sorted.map(r => `
+    <tr>
+      <td>${r.bank_name}</td>
+      <td>${fmtPct(r.rate_pct)}%</td>
+      <td>${fmtDate(r.scraped_at)}</td>
+    </tr>
+  `).join('');
+}
+
+async function loadLoans(){
+  const series = el('loanSeries').value;
+  const tbody = el('loanTable').querySelector('tbody');
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center">Đang tải…</td></tr>';
+
+  const rows = await fetch(`/api/bank-rates/latest?product_group=loan&series_code=${encodeURIComponent(series)}`).then(r=>r.json());
+  const sorted = rows.slice().sort((a,b)=> (a.rate_min_pct ?? 1e9) - (b.rate_min_pct ?? 1e9));
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Không có dữ liệu.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sorted.map(r => `
+    <tr>
+      <td>${r.bank_name}</td>
+      <td>${fmtPct(r.rate_min_pct)}%</td>
+      <td>${fmtPct(r.rate_max_pct)}%</td>
+      <td>${fmtDate(r.scraped_at)}</td>
+    </tr>
+  `).join('');
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadKpis();
+  await loadDeposits();
+  await loadLoans();
+});
+</script>
+{% endblock %}
