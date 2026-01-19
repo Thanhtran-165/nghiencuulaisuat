@@ -8,7 +8,7 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from io import StringIO
 
 from fastapi import APIRouter, HTTPException, Query
