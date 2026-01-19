@@ -8,7 +8,7 @@
 
 ### A. API Endpoints Verification
 
-**Claim in PROJECT_SUMMARY.md**: "8 REST endpoints"
+**Claim in `docs/history/PROJECT_SUMMARY.md`**: "8 REST endpoints"
 **Actual Count**: **9 endpoints**
 
 **Discrepancy**: Documentation understates endpoint count by 1.
@@ -26,7 +26,7 @@
 9. `POST /api/admin/ingest/backfill` - Trigger backfill
 
 **Correction Action Required**:
-- ✅ Update PROJECT_SUMMARY.md to state "9 REST endpoints"
+- ✅ Update `docs/history/PROJECT_SUMMARY.md` to state "9 REST endpoints"
 - ✅ Update README.md API section to list all 9 endpoints
 
 ---
@@ -170,7 +170,7 @@
 
 ## Corrections Applied
 
-### 1. Update PROJECT_SUMMARY.md
+### 1. Update `docs/history/PROJECT_SUMMARY.md`
 **Change**: "8 REST endpoints" → "9 REST endpoints"
 **Location**: API section
 

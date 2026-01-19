@@ -221,7 +221,7 @@ cat reports/provider_probe.json
 ## 📝 Documentation Updates Needed
 
 After completing Steps 3-7:
-1. Update PROJECT_SUMMARY.md endpoint count (9 → 11)
+1. Update `docs/history/PROJECT_SUMMARY.md` endpoint count (9 → 11)
 2. Update README.md with new commands
 3. Add provider probe documentation to README
 4. Document HNX and SBV constraints (if any)
