@@ -54,8 +54,9 @@ Lai_suat/data/*.db.*
 data/raw/*/
 !data/raw/.gitkeep
 
-# Logs
-logs/
+# Logs (keep folder structure)
+logs/*
+!logs/.gitkeep
 *.log
 
 # IDE
