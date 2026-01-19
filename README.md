@@ -141,6 +141,8 @@ PROVIDERS="hnx_yield_curve sbv_interbank lai_suat_rates" ./scripts/install_launc
 - `docs/METRICS_MAP.md` - Metrics/data lineage map
 - `docs/ACADEMIC_REVIEW.md` - Academic review (v1)
 - `docs/INTERPRETATION_GUIDE.md` - How to interpret metrics
+- `docs/REVIEW_AI2_SYNTHESIS.md` - Synthesis vs independent review (AI #2)
+- `docs/MEMO_DATA_WAITING_FILL.md` - Memo: datasets waiting daily fill
 - `docs/ACCEPTANCE_CHECKLIST.md` - Release readiness checklist
 - `docs/history/README.md` - Archived phase docs
 

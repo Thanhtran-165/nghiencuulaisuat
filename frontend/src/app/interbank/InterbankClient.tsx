@@ -257,7 +257,15 @@ export function InterbankClient({ initialCompare }: { initialCompare: InterbankC
           <div>
             <div className="text-white font-semibold">So sánh kỳ hiện tại / kỳ trước</div>
             <div className="text-white/50 text-sm">
-              Ngày áp dụng: {fmtShortDate(compare?.today_date)} • Kỳ trước: {fmtShortDate(compare?.prev_date)}
+              Ngày áp dụng: {fmtShortDate(compare?.today_date)}
+              <span
+                className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/10 text-[10px] text-white/70"
+                title="SBV công bố ‘ngày áp dụng’ (ngày có hiệu lực). Ngày này có thể không đổi dù hệ thống vừa crawl lại. ‘Cập nhật’ là thời điểm fetch."
+                aria-label="Giải thích Ngày áp dụng vs Cập nhật"
+              >
+                i
+              </span>{" "}
+              • Kỳ trước: {fmtShortDate(compare?.prev_date)}
               {compare?.today_fetched_at ? <> • Cập nhật: {fmtDateTime(compare.today_fetched_at)}</> : null}
             </div>
           </div>

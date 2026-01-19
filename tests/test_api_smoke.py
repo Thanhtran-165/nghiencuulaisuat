@@ -5,15 +5,71 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main as app_main
+from datetime import date, datetime
 
 
 @pytest.fixture
 def client(temp_db, sample_auction_data, sample_secondary_trading_data, sample_policy_rates_data):
     """Create test client with seeded database"""
+    today = date.today().isoformat()
+    now = datetime.now().isoformat()
+
     # Seed database with sample data
     temp_db.insert_auction_results(sample_auction_data)
     temp_db.insert_secondary_trading(sample_secondary_trading_data)
     temp_db.insert_policy_rates(sample_policy_rates_data)
+    temp_db.insert_yield_curve(
+        [
+            {
+                "date": today,
+                "tenor_label": "2Y",
+                "tenor_days": 730,
+                "spot_rate_continuous": 5.0,
+                "par_yield": 5.1,
+                "spot_rate_annual": 5.05,
+                "source": "HNX_YC",
+                "fetched_at": now,
+            },
+            {
+                "date": today,
+                "tenor_label": "5Y",
+                "tenor_days": 1825,
+                "spot_rate_continuous": 6.0,
+                "par_yield": 6.1,
+                "spot_rate_annual": 6.05,
+                "source": "HNX_YC",
+                "fetched_at": now,
+            },
+            {
+                "date": today,
+                "tenor_label": "10Y",
+                "tenor_days": 3650,
+                "spot_rate_continuous": 7.0,
+                "par_yield": 7.1,
+                "spot_rate_annual": 7.05,
+                "source": "HNX_YC",
+                "fetched_at": now,
+            },
+        ]
+    )
+    temp_db.insert_interbank_rates(
+        [
+            {
+                "date": today,
+                "tenor_label": "ON",
+                "rate": 0.5,
+                "source": "SBV",
+                "fetched_at": now,
+            },
+            {
+                "date": today,
+                "tenor_label": "1W",
+                "rate": 0.65,
+                "source": "SBV",
+                "fetched_at": now,
+            },
+        ]
+    )
 
     # Override the global db_manager
     original_app_db = app_main.db_manager
@@ -215,6 +271,33 @@ class TestCoverageAPI:
             assert 'earliest_date' in data[table]
             assert 'latest_date' in data[table]
             assert 'date_count' in data[table]
+
+class TestDashboardFreshnessAPI:
+    def test_dashboard_metrics_includes_freshness(self, client: TestClient):
+        response = client.get("/api/dashboard/metrics")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "as_of_date" in data
+        assert "freshness" in data
+        assert isinstance(data["freshness"], dict)
+
+        expected_keys = {"yield_curve", "interbank", "bank_deposit", "bank_loan", "stress"}
+        assert expected_keys.issubset(set(data["freshness"].keys()))
+
+        for k in expected_keys:
+            item = data["freshness"][k]
+            assert "fill_mode" in item
+            assert "note" in item
+
+    def test_interbank_compare_includes_gap_fields(self, client: TestClient):
+        response = client.get("/api/interbank/compare")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "as_of_date" in data
+        assert "today_gap_days" in data
+        assert "note" in data
 
 
 class TestUIRoutes:

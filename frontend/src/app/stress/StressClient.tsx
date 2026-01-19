@@ -24,6 +24,11 @@ function fmtSignedScore(v?: number | null) {
   return v > 0 ? `+${s}` : s;
 }
 
+function fmtWeight(weight?: number | null) {
+  if (weight == null) return "—";
+  return `${(weight * 100).toFixed(0)}%`;
+}
+
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -41,6 +46,7 @@ type Driver = {
   name?: string;
   label?: string;
   metric?: string;
+  weight?: number;
   contribution?: number;
   percentile?: number;
   value?: number;
@@ -55,6 +61,7 @@ function parseDrivers(record: BondYStressRecord | null): Driver[] {
       name: typeof d?.name === "string" ? d.name : undefined,
       label: typeof d?.label === "string" ? d.label : undefined,
       metric: typeof d?.metric === "string" ? d.metric : undefined,
+      weight: typeof d?.weight === "number" ? d.weight : undefined,
       contribution: typeof d?.contribution === "number" ? d.contribution : undefined,
       percentile: typeof d?.percentile === "number" ? d.percentile : undefined,
       value: typeof d?.value === "number" ? d.value : undefined,
@@ -335,6 +342,7 @@ export function StressClient({
                         {" "}
                         · đóng góp: {fmtSignedScore(d.contribution ?? null)} (điểm)
                         {d.value != null ? ` · mức chuẩn hoá: ${fmtScore(d.value)}/100` : ""}
+                        {d.weight != null ? ` · trọng số: ${fmtWeight(d.weight)}` : ""}
                       </span>
                     )}
                   </div>
@@ -368,6 +376,10 @@ export function StressClient({
           {
             term: "Chuẩn hoá (0–100)",
             def: "Để so sánh các yếu tố khác đơn vị (%, bps, khối lượng…), hệ thống đổi về cùng một thang đo 0–100.",
+          },
+          {
+            term: "Trọng số",
+            def: "Khi tổng hợp Stress, mỗi nhóm chỉ báo có mức quan trọng khác nhau. Trọng số càng cao thì driver đó tác động đến Stress mạnh hơn.",
           },
           {
             term: "Giới hạn",
@@ -499,6 +511,7 @@ export function StressClient({
                     <div className="text-white/60 mt-1">
                       {d.value != null ? `Mức chuẩn hoá: ${fmtScore(d.value)}/100.` : "Mức chuẩn hoá: —."}{" "}
                       {d.contribution != null ? `Đóng góp: ${fmtSignedScore(d.contribution)} điểm.` : "Đóng góp: —."}
+                      {d.weight != null ? ` Trọng số: ${fmtWeight(d.weight)}.` : ""}
                     </div>
                   </div>
                 ))

@@ -197,6 +197,47 @@ function fmtAlertThreshold(a: TransmissionAlertRecord) {
   }
 }
 
+function parseAlertSourceData(a: TransmissionAlertRecord): any | null {
+  try {
+    const raw = (a as any).source_data;
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return null;
+  }
+}
+
+function EvidenceSummary({ alert }: { alert: TransmissionAlertRecord }) {
+  const parsed = parseAlertSourceData(alert);
+  const ev = parsed?.evidence;
+  if (!ev || typeof ev !== "object") return null;
+
+  const rows: Array<{ k: string; v: string }> = [];
+  if (typeof ev.metric === "string") rows.push({ k: "Metric", v: ev.metric });
+  if (typeof ev.method === "string") rows.push({ k: "Method", v: ev.method });
+  if (typeof ev.unit === "string") rows.push({ k: "Unit", v: ev.unit });
+  if (typeof ev.trigger_mode === "string") rows.push({ k: "Trigger", v: ev.trigger_mode });
+  if (ev.baseline_date) rows.push({ k: "Baseline date", v: String(ev.baseline_date) });
+  if (typeof ev.n === "number") rows.push({ k: "n", v: String(ev.n) });
+  if (typeof ev.lookback === "number") rows.push({ k: "Lookback", v: String(ev.lookback) });
+  if (typeof ev.z === "number") rows.push({ k: "z", v: ev.z.toFixed(2) });
+
+  if (!rows.length) return null;
+
+  return (
+    <div className="glass-card rounded-xl p-4">
+      <div className="text-white/60 text-xs">Bằng chứng (tóm tắt)</div>
+      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+        {rows.map((r) => (
+          <div key={r.k} className="flex items-center justify-between gap-3">
+            <div className="text-white/50">{r.k}</div>
+            <div className="text-white/90 font-medium">{r.v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TransmissionClient({
   initialLatest,
   initialScoreSeries,
@@ -558,6 +599,8 @@ export function TransmissionClient({
                   <div className="text-white font-semibold">{fmtAlertThreshold(selectedAlert)}</div>
                 </div>
               </div>
+
+              <EvidenceSummary alert={selectedAlert} />
 
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="text-white/60 text-xs">

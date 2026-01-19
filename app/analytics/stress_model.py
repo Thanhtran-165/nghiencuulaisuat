@@ -388,13 +388,21 @@ class BondYStressModel:
 
         for component_name, percentile in percentile_ranks.items():
             if percentile is not None:
-                # Contribution is how much this component pushes stress away from neutral (50)
-                contribution = (percentile - 50) * self.WEIGHTS.get(f'{component_name}_stress', 0) or self.WEIGHTS.get('transmission_score', 0)
+                # Contribution is how much this component pushes stress away from neutral (50).
+                # NOTE: avoid `... * weight or fallback` because 0.0 is falsy.
+                weight = self.WEIGHTS.get(f'{component_name}_stress')
+                if weight is None:
+                    weight = self.WEIGHTS.get('transmission_score', 0)
+                contribution = (percentile - 50) * float(weight or 0.0)
 
                 drivers.append({
+                    'metric': component_name,
+                    'label': component_labels.get(component_name, component_name),
                     'name': component_labels.get(component_name, component_name),
+                    'weight': float(weight or 0.0),
+                    'percentile': percentile,
                     'value': percentile,
-                    'contribution': contribution
+                    'contribution': contribution,
                 })
 
         # Sort by absolute contribution

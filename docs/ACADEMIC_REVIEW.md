@@ -65,6 +65,9 @@ Checklist học thuật:
 - Alert dựa trên z-score/history phải dùng `date < target_date` để tránh leakage.
 - Alert message cần kèm evidence (metric_value, threshold, window n).
 
+Hiện trạng:
+- `source_data` của alerts có thêm block `evidence` (metric/method/unit/baseline/n/…); UI Transmission hiển thị tóm tắt evidence trong modal “Chi tiết”.
+
 ## 4) BondY Stress (composite stress index)
 
 Module: `app/analytics/stress_model.py`
@@ -100,4 +103,3 @@ Module: `app/analytics/horizon_assessment.py`
 3) **Applied date semantics**: interbank compare trả `today_date` và `today_fetched_at` khác nhau khi SBV không đổi ngày áp dụng.
 4) **Missingness robustness**: horizon theo “phiên” không crash khi thiếu ngày.
 5) **Alert defaults**: fresh DB vẫn detect được alerts theo default thresholds.
-

@@ -242,6 +242,20 @@ class AlertEngine:
                 "mean": float(mean),
                 "stdev": float(stdev),
                 "z_thresholds": {"low": z_low, "medium": z_medium, "high": z_high},
+                "evidence": {
+                    "metric": "transmission_score",
+                    "unit": "points",
+                    "method": "zscore_over_history",
+                    "history_end_exclusive": True,
+                    "lookback": lookback,
+                    "min_n": min_n,
+                    "n": len(hist),
+                    "mean": float(mean),
+                    "stdev": float(stdev),
+                    "z": float(z),
+                    "z_trigger": float(z_trigger) if z_trigger is not None else None,
+                    "threshold_score": threshold_score,
+                },
             },
         )
 
@@ -259,7 +273,7 @@ class AlertEngine:
 
         prev = self.db.con.execute(
             """
-            SELECT metric_value
+            SELECT date, metric_value
             FROM transmission_daily_metrics
             WHERE metric_name = 'transmission_score'
               AND date < ?
@@ -269,10 +283,12 @@ class AlertEngine:
             """,
             [target_date.isoformat()],
         ).fetchone()
-        if not prev or not isinstance(prev[0], (int, float)):
+        if not prev or len(prev) < 2 or not isinstance(prev[1], (int, float)):
             return None
 
-        delta = float(score) - float(prev[0])
+        prev_date = prev[0]
+        prev_value = float(prev[1])
+        delta = float(score) - prev_value
         abs_delta = abs(delta)
         if abs_delta >= jump_high:
             severity = "HIGH"
@@ -289,7 +305,22 @@ class AlertEngine:
             f"Transmission score jump ({delta:+.1f} pts)",
             metric_value=float(delta),
             threshold=float(threshold),
-            source_data={"today": float(score), "prev": float(prev[0]), "delta": float(delta)},
+            source_data={
+                "today": float(score),
+                "prev": prev_value,
+                "prev_date": str(prev_date) if prev_date is not None else None,
+                "delta": float(delta),
+                "evidence": {
+                    "metric": "transmission_score",
+                    "unit": "points",
+                    "method": "absolute_delta_vs_previous_available",
+                    "baseline_date": str(prev_date) if prev_date is not None else None,
+                    "baseline_value": prev_value,
+                    "current_value": float(score),
+                    "delta": float(delta),
+                    "threshold_abs": float(threshold),
+                },
+            },
         )
 
     def _check_liquidity_spike(self, metrics: Dict, config: Dict) -> Optional[Dict]:
@@ -344,6 +375,15 @@ class AlertEngine:
                     'ib_effective_date': metrics.get('ib_effective_date'),
                     'thresholds': {'z_min': z_min, 'on_min': on_min},
                     'trigger_mode': trigger_mode,
+                    'evidence': {
+                        'metric': 'ib_on' if trigger_mode != 'zscore' else 'ib_on_zscore_20d',
+                        'unit': '%' if trigger_mode != 'zscore' else 'z',
+                        'method': 'threshold',
+                        'trigger_mode': trigger_mode,
+                        'current_value': metric_value,
+                        'threshold': threshold_value,
+                        'effective_date': metrics.get('ib_effective_date'),
+                    },
                 }
             )
         return None
@@ -384,6 +424,14 @@ class AlertEngine:
                     'slope_10y_2y_change_20d': slope_change_20d,
                     'thresholds': {'slope_min': slope_min, 'bps_change_20d_min': bps_change_20d_min},
                     'trigger_mode': trigger_mode,
+                    'evidence': {
+                        'metric': 'slope_10y_2y' if trigger_mode == 'absolute' else 'slope_10y_2y_change_20d',
+                        'unit': '%',
+                        'method': 'threshold',
+                        'trigger_mode': trigger_mode,
+                        'current_value': slope if trigger_mode == 'absolute' else slope_change_20d,
+                        'threshold': float(threshold) if threshold is not None else None,
+                    },
                 }
             )
         return None
@@ -402,7 +450,18 @@ class AlertEngine:
                 f"Weak auction demand (BTC: {btc:.2f})",
                 metric_value=float(btc),
                 threshold=float(btc_max),
-                source_data={'auction_bid_to_cover_median_20d': btc, 'btc_max': btc_max}
+                source_data={
+                    'auction_bid_to_cover_median_20d': btc,
+                    'btc_max': btc_max,
+                    'evidence': {
+                        'metric': 'auction_bid_to_cover_median_20d',
+                        'unit': 'ratio',
+                        'method': 'threshold',
+                        'current_value': float(btc),
+                        'threshold': float(btc_max),
+                        'direction': 'below_is_worse',
+                    },
+                }
             )
         return None
 
@@ -420,7 +479,18 @@ class AlertEngine:
                 f"Secondary market turnover drop (z-score: {zscore:.2f})",
                 metric_value=float(zscore),
                 threshold=float(z_max),
-                source_data={'secondary_value_zscore_60d': zscore, 'z_max': z_max}
+                source_data={
+                    'secondary_value_zscore_60d': zscore,
+                    'z_max': z_max,
+                    'evidence': {
+                        'metric': 'secondary_value_zscore_60d',
+                        'unit': 'z',
+                        'method': 'threshold',
+                        'current_value': float(zscore),
+                        'threshold': float(z_max),
+                        'direction': 'below_is_worse',
+                    },
+                }
             )
         return None
 
@@ -436,7 +506,15 @@ class AlertEngine:
                 source_data={
                     'refinancing': metrics.get('policy_refinancing'),
                     'rediscount': metrics.get('policy_rediscount'),
-                    'base': metrics.get('policy_base')
+                    'base': metrics.get('policy_base'),
+                    'evidence': {
+                        'metric': 'policy_rates',
+                        'unit': '%',
+                        'method': 'change_flag',
+                        'refinancing': metrics.get('policy_refinancing'),
+                        'rediscount': metrics.get('policy_rediscount'),
+                        'base': metrics.get('policy_base'),
+                    },
                 }
             )
         return None
@@ -455,7 +533,17 @@ class AlertEngine:
                 f"High transmission score ({score:.1f}/100)",
                 metric_value=float(score),
                 threshold=float(score_min),
-                source_data={'transmission_score': score, 'score_min': score_min}
+                source_data={
+                    'transmission_score': score,
+                    'score_min': score_min,
+                    'evidence': {
+                        'metric': 'transmission_score',
+                        'unit': 'points',
+                        'method': 'absolute_threshold',
+                        'current_value': float(score),
+                        'threshold': float(score_min),
+                    },
+                }
             )
         return None
 
@@ -473,7 +561,17 @@ class AlertEngine:
                 f"High BondY stress index ({stress:.1f}/100)",
                 metric_value=float(stress),
                 threshold=float(stress_min),
-                source_data={'stress_index': stress, 'stress_min': stress_min}
+                source_data={
+                    'stress_index': stress,
+                    'stress_min': stress_min,
+                    'evidence': {
+                        'metric': 'stress_index',
+                        'unit': 'points',
+                        'method': 'absolute_threshold',
+                        'current_value': float(stress),
+                        'threshold': float(stress_min),
+                    },
+                }
             )
         return None
 

@@ -283,6 +283,9 @@ class InterbankCompareResponse(BaseModel):
     prev_date: Optional[date] = None
     today_fetched_at: Optional[datetime] = None
     prev_fetched_at: Optional[datetime] = None
+    as_of_date: Optional[date] = None
+    today_gap_days: Optional[int] = None
+    note: Optional[str] = None
     rows: List[InterbankCompareRow]
 
 class AuctionRecord(BaseModel):
@@ -366,6 +369,8 @@ class DashboardMetrics(BaseModel):
     stress_prev_index: Optional[float] = None
     stress_change: Optional[float] = None
     latest_date: Optional[str]
+    as_of_date: Optional[str] = None
+    freshness: Optional[Dict[str, Any]] = None
 
 
 # Yield curve endpoints
@@ -586,6 +591,7 @@ async def get_latest_interbank_rates():
 async def get_interbank_compare():
     """Get latest interbank rates and previous available day (for dashboard comparison)."""
     try:
+        as_of = date.today()
         today_date = db_manager.con.execute(
             """
             SELECT COALESCE(
@@ -595,7 +601,7 @@ async def get_interbank_compare():
             """
         ).fetchone()[0]
         if today_date is None:
-            return InterbankCompareResponse(today_date=None, prev_date=None, rows=[])
+            return InterbankCompareResponse(today_date=None, prev_date=None, as_of_date=as_of, today_gap_days=None, rows=[])
 
         prev_date = db_manager.con.execute(
             "SELECT MAX(date) FROM interbank_rates WHERE date < ?",
@@ -683,11 +689,26 @@ async def get_interbank_compare():
                 )
             )
 
+        gap_days = None
+        try:
+            gap_days = (as_of - today_date).days
+        except Exception:
+            gap_days = None
+
+        note = (
+            "SBV công bố 'ngày áp dụng' (ngày có hiệu lực). Ngày này có thể trễ 1–2 ngày hoặc không đổi dù hệ thống vừa crawl lại."
+            if gap_days is not None and gap_days > 0
+            else None
+        )
+
         return InterbankCompareResponse(
             today_date=today_date,
             prev_date=prev_date,
             today_fetched_at=today_fetched_at,
             prev_fetched_at=prev_fetched_at,
+            as_of_date=as_of,
+            today_gap_days=gap_days,
+            note=note,
             rows=out_rows,
         )
     except Exception as e:
@@ -719,10 +740,20 @@ async def get_interbank_timeseries(
 async def get_dashboard_metrics():
     """Get dashboard summary metrics"""
     try:
+        as_of = date.today()
+
         def bps_delta(now: Optional[float], prev: Optional[float]) -> Optional[float]:
             if now is None or prev is None:
                 return None
             return (now - prev) * 100.0
+
+        def gap_days_for(d: Optional[date]) -> Optional[int]:
+            if d is None:
+                return None
+            try:
+                return (as_of - d).days
+            except Exception:
+                return None
 
         # Yield curve (HNX preferred)
         latest_yield = db_manager.get_latest_yield_curve()
@@ -779,6 +810,15 @@ async def get_dashboard_metrics():
             spread_10y_2y_prev = ten_y_prev - two_y_prev
 
         # Interbank (today level only for dashboard summary; detailed compare is /api/interbank/compare)
+        interbank_date = db_manager.con.execute(
+            """
+            SELECT COALESCE(
+              (SELECT MAX(date) FROM interbank_rates WHERE source = 'SBV'),
+              (SELECT MAX(date) FROM interbank_rates)
+            )
+            """
+        ).fetchone()[0]
+
         interbank_on = db_manager.get_interbank_rates(tenor="ON")
         on_rate = interbank_on[0]["rate"] if interbank_on else None
 
@@ -937,6 +977,43 @@ async def get_dashboard_metrics():
         if stress_index is not None and stress_prev_index is not None:
             stress_change = float(stress_index) - float(stress_prev_index)
 
+        freshness: Dict[str, Any] = {}
+        try:
+            yield_d = latest_yield[0]["date"] if latest_yield else None
+        except Exception:
+            yield_d = None
+
+        freshness["yield_curve"] = {
+            "used_date": str(yield_d) if yield_d is not None else None,
+            "gap_days": gap_days_for(yield_d),
+            "fill_mode": "backfillable",
+            "note": "Nếu chưa có dữ liệu ngày hôm nay, thường là nguồn HNX chưa cập nhật hoặc chưa publish tại thời điểm bạn xem.",
+        }
+        freshness["interbank"] = {
+            "used_date": str(interbank_date) if interbank_date is not None else None,
+            "gap_days": gap_days_for(interbank_date),
+            "fill_mode": "daily_accumulation",
+            "note": "SBV dùng 'ngày áp dụng' nên có thể trễ/không đổi dù vừa crawl lại.",
+        }
+        freshness["bank_deposit"] = {
+            "used_date": str(deposit_date) if deposit_date is not None else None,
+            "gap_days": gap_days_for(deposit_date),
+            "fill_mode": "bridge_sqlite",
+            "note": "Nguồn bank rates phụ thuộc crawler Lai_suat; khi nguồn chưa có ngày mới thì UI giữ ngày gần nhất.",
+        }
+        freshness["bank_loan"] = {
+            "used_date": str(loan_date) if loan_date is not None else None,
+            "gap_days": gap_days_for(loan_date),
+            "fill_mode": "bridge_sqlite",
+            "note": "Nguồn bank rates phụ thuộc crawler Lai_suat; khi nguồn chưa có ngày mới thì UI giữ ngày gần nhất.",
+        }
+        freshness["stress"] = {
+            "used_date": stress_date,
+            "gap_days": gap_days_for(date.fromisoformat(stress_date)) if stress_date else None,
+            "fill_mode": "derived",
+            "note": "Stress phụ thuộc Transmission; nếu thiếu dữ liệu thành phần hoặc chưa compute, Stress có thể trễ.",
+        }
+
         return DashboardMetrics(
             two_y=two_y,
             five_y=five_y,
@@ -969,6 +1046,8 @@ async def get_dashboard_metrics():
             stress_prev_index=stress_prev_index,
             stress_change=stress_change,
             latest_date=latest_date,
+            as_of_date=as_of.isoformat(),
+            freshness=freshness,
         )
 
     except Exception as e:

@@ -26,6 +26,22 @@ function fmtDateTime(value?: string | null) {
   return d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
 
+function freshnessLine(
+  metrics: DashboardMetrics | null,
+  key: string
+): { text: string; detail?: string } | null {
+  const item = metrics?.freshness?.[key];
+  if (!item) return null;
+  const gap = item.gap_days;
+  const used = item.used_date;
+  if (gap == null || used == null) return null;
+  if (gap <= 0) return null;
+  return {
+    text: `Dữ liệu hôm nay chưa có; đang hiển thị ${used} (trễ ${gap} ngày).`,
+    detail: item.note || undefined,
+  };
+}
+
 function fmtPts(value?: number | null) {
   if (value == null) return "—";
   const sign = value > 0 ? "+" : "";
@@ -70,6 +86,10 @@ export default async function Home() {
     const h = insights?.horizons?.[key];
     return { key, text: h?.conclusion || "Chưa đủ dữ liệu để đánh giá." };
   });
+  const yieldFresh = freshnessLine(metrics, "yield_curve");
+  const bankDepositFresh = freshnessLine(metrics, "bank_deposit");
+  const bankLoanFresh = freshnessLine(metrics, "bank_loan");
+  const stressFresh = freshnessLine(metrics, "stress");
 
   return (
     <div className="space-y-6">
@@ -120,6 +140,11 @@ export default async function Home() {
               <div className="text-white/50 text-sm mt-1">
                 Ngày: <span className="text-white/70">{metrics?.stress_date || "—"}</span>
               </div>
+              {stressFresh ? (
+                <div className="text-white/50 text-xs mt-1" title={stressFresh.detail || ""}>
+                  {stressFresh.text}
+                </div>
+              ) : null}
             </div>
             <div className="text-right">
               <div className="text-white text-2xl font-semibold">
@@ -153,6 +178,11 @@ export default async function Home() {
               <div className="text-white/50 text-sm">
                 Ngày dữ liệu: <span className="text-white/70">{metrics?.latest_date || "—"}</span>
               </div>
+              {yieldFresh ? (
+                <div className="text-white/50 text-xs mt-1" title={yieldFresh.detail || ""}>
+                  {yieldFresh.text}
+                </div>
+              ) : null}
             </div>
             <span className="text-white/50 text-xs">2Y/5Y/10Y</span>
           </div>
@@ -193,6 +223,13 @@ export default async function Home() {
               <div className="text-white font-semibold">Interbank (SBV)</div>
               <div className="text-white/50 text-sm">
                 Ngày áp dụng: <span className="text-white/70">{ibCompare?.today_date || "—"}</span>
+                <span
+                  className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/10 text-[10px] text-white/70"
+                  title="SBV công bố ‘ngày áp dụng’ (ngày có hiệu lực). Ngày này có thể không đổi dù hệ thống vừa crawl lại. ‘Cập nhật’ là thời điểm fetch."
+                  aria-label="Giải thích Ngày áp dụng vs Cập nhật"
+                >
+                  i
+                </span>
                 {" • "}
                 Kỳ trước: <span className="text-white/70">{ibCompare?.prev_date || "—"}</span>
                 {ibCompare?.today_fetched_at ? (
@@ -202,6 +239,11 @@ export default async function Home() {
                   </>
                 ) : null}
               </div>
+              {ibCompare?.today_gap_days != null && ibCompare.today_gap_days > 0 ? (
+                <div className="text-white/50 text-xs mt-1" title={ibCompare.note || ""}>
+                  SBV chưa công bố “ngày áp dụng” mới; đang hiển thị ngày gần nhất (trễ {ibCompare.today_gap_days} ngày).
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="glass-card rounded-xl p-3">
@@ -256,6 +298,16 @@ export default async function Home() {
               <div className="text-white font-semibold">{fmtPct(metrics?.loan_avg)}</div>
             </div>
           </div>
+          {bankDepositFresh ? (
+            <div className="text-white/50 text-xs" title={bankDepositFresh.detail || ""}>
+              {bankDepositFresh.text}
+            </div>
+          ) : null}
+          {bankLoanFresh ? (
+            <div className="text-white/50 text-xs" title={bankLoanFresh.detail || ""}>
+              {bankLoanFresh.text}
+            </div>
+          ) : null}
           <div className="text-white/60 text-sm">
             Chi tiết:{" "}
             <Link className="text-white/90 hover:text-white underline" href="/lai-suat">
