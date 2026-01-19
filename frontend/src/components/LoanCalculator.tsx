@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { GlassCard } from "./GlassCard";
-import { formatCurrency, formatRate, formatDate } from "@/lib/utils";
+import { formatCurrency, formatPercent } from "@/lib/utils";
 import CashflowChart from "./CashflowChart";
 import BalanceChart from "./BalanceChart";
 import ScheduleTable from "./ScheduleTable";
@@ -17,6 +17,7 @@ interface LoanInput {
   dayCountMode: 'actual_365' | 'estimated';
   paymentMethod: 'principal_equal' | 'annuity' | 'interest_only';
   gracePrincipalMonths: number;
+  monthlyIncome: number;
 }
 
 interface LoanScheduleItem {
@@ -49,7 +50,8 @@ export default function LoanCalculator() {
     paymentDay: new Date().getDate(),
     dayCountMode: 'actual_365',
     paymentMethod: 'annuity',
-    gracePrincipalMonths: 0
+    gracePrincipalMonths: 0,
+    monthlyIncome: 0
   });
 
   const [result, setResult] = useState<LoanOutput | null>(null);
@@ -88,7 +90,8 @@ export default function LoanCalculator() {
         paymentDay: new Date().getDate(),
         dayCountMode: 'actual_365',
         paymentMethod: 'annuity',
-        gracePrincipalMonths: 0
+        gracePrincipalMonths: 0,
+        monthlyIncome: 0
       },
       2: {
         principal: 200000000,
@@ -98,7 +101,8 @@ export default function LoanCalculator() {
         paymentDay: new Date().getDate(),
         dayCountMode: 'actual_365',
         paymentMethod: 'principal_equal',
-        gracePrincipalMonths: 6
+        gracePrincipalMonths: 6,
+        monthlyIncome: 0
       },
       3: {
         principal: 1000000000,
@@ -108,7 +112,8 @@ export default function LoanCalculator() {
         paymentDay: new Date().getDate(),
         dayCountMode: 'estimated',
         paymentMethod: 'interest_only',
-        gracePrincipalMonths: 0
+        gracePrincipalMonths: 0,
+        monthlyIncome: 0
       }
     };
 
@@ -207,6 +212,13 @@ export default function LoanCalculator() {
     }
   };
 
+  const ptiColorClass = (pti: number) => {
+    if (!Number.isFinite(pti)) return "text-white";
+    if (pti <= 0.3) return "text-green-400";
+    if (pti <= 0.4) return "text-yellow-400";
+    return "text-red-400";
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Input Form */}
@@ -226,6 +238,22 @@ export default function LoanCalculator() {
               className="w-full px-4 py-2 rounded-lg glass-input text-white focus:ring-2 focus:ring-white/20"
               placeholder="Nhập số tiền vay"
             />
+          </div>
+
+          {/* Thu nhập hàng tháng (tùy chọn) */}
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Thu nhập hàng tháng (VND)</label>
+            <input
+              type="number"
+              min="0"
+              value={formData.monthlyIncome}
+              onChange={(e) => handleInputChange('monthlyIncome', Number(e.target.value))}
+              className="w-full px-4 py-2 rounded-lg glass-input text-white focus:ring-2 focus:ring-white/20"
+              placeholder="Nhập thu nhập để tính chỉ số an toàn"
+            />
+            <p className="text-xs text-white/40 mt-1">
+              Dùng để tính PTI/DSTI (khoản trả hàng tháng / thu nhập hàng tháng).
+            </p>
           </div>
 
           {/* Lãi suất năm - Rate Source Selector */}
@@ -406,6 +434,40 @@ export default function LoanCalculator() {
                 <p className="text-xl font-bold text-red-400">{formatCurrency(result.maxPayment)}</p>
               </GlassCard>
             </div>
+
+            {/* Affordability / Safety Metrics (optional) */}
+            {formData.monthlyIncome > 0 && (
+              <GlassCard>
+                <p className="text-sm text-white/60 mb-4">Chỉ số an toàn trả nợ (tham khảo)</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-white/50 mb-1">Thu nhập/tháng</p>
+                    <p className="text-lg font-semibold text-white">{formatCurrency(formData.monthlyIncome)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-white/50 mb-1">Dư địa (kỳ lớn nhất)</p>
+                    <p className="text-lg font-semibold text-white">
+                      {formatCurrency(formData.monthlyIncome - result.maxPayment)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-white/50 mb-1">PTI/DSTI (kỳ đầu)</p>
+                    <p className={`text-lg font-semibold ${ptiColorClass(result.firstPayment / formData.monthlyIncome)}`}>
+                      {formatPercent(result.firstPayment / formData.monthlyIncome)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-white/50 mb-1">PTI/DSTI (lớn nhất)</p>
+                    <p className={`text-lg font-semibold ${ptiColorClass(result.maxPayment / formData.monthlyIncome)}`}>
+                      {formatPercent(result.maxPayment / formData.monthlyIncome)}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-white/40 mt-4">
+                  Lưu ý: ngưỡng an toàn phụ thuộc ngân hàng/quốc gia và chi phí sinh hoạt, các khoản nợ khác.
+                </p>
+              </GlassCard>
+            )}
 
             {/* Charts */}
             <CashflowChart data={result.cashflowData} type="loan" />
