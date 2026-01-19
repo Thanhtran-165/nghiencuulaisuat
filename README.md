@@ -16,6 +16,10 @@
 - **Idempotent Operations**: Safe to run multiple times without duplicate data
 - **Raw Data Storage**: Preserves original HTML/PDF files for audit purposes
 
+## Lưu ý về dữ liệu (quan trọng)
+
+Một số dataset **không backfill được** (nguồn chỉ cung cấp “latest”), nên cần chạy ingest theo ngày để tích luỹ dần. Xem chi tiết: `docs/MEMO_DATA_WAITING_FILL.md`.
+
 ## Quick Start (Local UI - khuyến nghị)
 
 ### Prerequisites
@@ -43,21 +47,39 @@ You need:
 
 Backend API/DB/ingest chạy ở `http://127.0.0.1:8001` (không dùng UI cũ nữa).
 
+## Quick Start (Docker - backend only)
+
+Docker Compose chạy **backend** ở `http://127.0.0.1:8000` (không chạy Next.js UI).
+
+```bash
+docker compose up --build
+```
+
+Nếu máy bạn đang bận cổng `8000`, dùng cổng khác:
+
+```bash
+HOST_PORT=8002 docker compose up --build
+```
+
 ## Verification Checklist
 
 After starting the application, verify it's working correctly:
 
 ```bash
+# Local scripts: BASE_URL=http://127.0.0.1:8001
+# Docker:        BASE_URL=http://127.0.0.1:8000 (or http://127.0.0.1:$HOST_PORT)
+BASE_URL=http://127.0.0.1:8001
+
 # 1. Check health endpoint
-curl http://127.0.0.1:8001/healthz
+curl "$BASE_URL/healthz"
 # Should return: {"status":"ok","timestamp":"..."}
 
 # 2. Check readiness endpoint
-curl http://127.0.0.1:8001/readyz
+curl "$BASE_URL/readyz"
 # Should return database and system status
 
 # 3. Check metrics endpoint
-curl http://127.0.0.1:8001/metrics | head
+curl "$BASE_URL/metrics" | head
 # Should return Prometheus-style metrics
 
 # 4. Open Admin monitoring (Next.js)

@@ -3,9 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vn-bond-lab-prod
     ports:
-      - "8000:8000"
+      - "${HOST_PORT:-8000}:8000"
     volumes:
       # Persist database and raw data
       - ./data:/app/data

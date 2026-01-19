@@ -3,7 +3,7 @@ Application Version and Build Information
 """
 from datetime import datetime
 
-__version__ = "1.0.0-rc1"
+__version__ = "1.0.0"
 __build_date__ = datetime.utcnow().isoformat()
 
 

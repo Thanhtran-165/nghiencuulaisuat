@@ -1,17 +1,17 @@
-# Release Notes - Version 1.0.0-rc1
+# Release Notes - Version 1.0.0
 
-**Release Date**: 2026-01-13
-**Version**: 1.0.0-rc1 (Release Candidate 1)
+**Release Date**: 2026-01-19
+**Version**: 1.0.0
 
 ---
 
 ## Overview
 
-VN Bond Lab v1.0.0-rc1 is the first release candidate for production use. This release provides comprehensive Vietnamese government bond market data collection, storage, and analysis capabilities with production-ready observability, monitoring, and operational features.
+VN Bond Lab v1.0.0 is the first public release. It provides Vietnamese government bond market data collection, storage, and analysis capabilities with observability, monitoring, and operational tooling.
 
 ---
 
-## What's New in RC1
+## Highlights
 
 ### 🎯 Production-Ready Features
 
@@ -50,7 +50,20 @@ VN Bond Lab v1.0.0-rc1 is the first release candidate for production use. This r
 
 ---
 
-## Features by Phase
+## Data Availability (Important)
+
+Một số dataset **không backfill được** (nguồn chỉ cung cấp “latest”), nên cần chạy ingest theo ngày để dữ liệu tích luỹ dần:
+
+- SBV interbank (`interbank_rates`) – “latest only”
+- SBV policy (`policy_rates`) – thường “current/announcement”, khó backfill lịch sử
+- ABO Market Watch – chỉ dùng đối chiếu ngắn hạn, không lấp lịch sử
+- Secondary trading (`gov_secondary_trading`) – lịch sử bị giới hạn bởi endpoint (earliest hiện ~2025-01-15)
+
+Chi tiết và ảnh hưởng học thuật: `docs/MEMO_DATA_WAITING_FILL.md`.
+
+---
+
+## Features by Phase (carried over from RC1)
 
 ### Phase 9: Release Candidate
 - Version information API

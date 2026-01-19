@@ -102,6 +102,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0] - 2026-01-19
+
+### Added
+- `.dockerignore` to keep Docker build context small and avoid copying local state (data/logs/node_modules) into images.
+
+### Changed
+- Docker Compose: remove fixed `container_name` to avoid name conflicts on user machines.
+- Docker Compose: allow host port override via `HOST_PORT` (default `8000`).
+- Docker Compose: healthcheck uses `/healthz`.
+- Documentation: clarify local (8001) vs Docker (8000) ports and add a Docker quick start.
+- Documentation: call out datasets that are “latest only” and must accumulate day-by-day (see `docs/MEMO_DATA_WAITING_FILL.md`).
+
+### Fixed
+- Reduce “clone → build” friction caused by unnecessarily large Docker build contexts.
+
 ## [Unreleased]
 
 ### Planned

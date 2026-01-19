@@ -3,9 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vn-bond-lab
     ports:
-      - "8000:8000"
+      - "${HOST_PORT:-8000}:8000"
     volumes:
       # Persist database and raw data
       - ./data:/app/data
@@ -52,7 +51,7 @@ services:
 
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
