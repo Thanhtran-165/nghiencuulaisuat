@@ -158,6 +158,8 @@ PROVIDERS="hnx_yield_curve sbv_interbank lai_suat_rates" ./scripts/install_launc
 - `QUICKSTART.md` - Quick start (Docker)
 - `docs/DEPLOYMENT.md` - Deployment notes
 - `docs/RUNBOOK_SMOKE.md` - Smoke/runbook checks
+- `RELEASE_NOTES.md` - Release notes (EN)
+- `RELEASE_NOTES_VI.md` - Release notes (VI)
 - `docs/GLOBAL_DATA.md` - Optional global data (FRED)
 - `docs/AUDIT.md` - Audit notes and cleanup plan
 - `docs/METRICS_MAP.md` - Metrics/data lineage map

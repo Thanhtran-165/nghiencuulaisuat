@@ -3,6 +3,8 @@
 **Release Date**: 2026-01-19
 **Version**: 1.0.0
 
+Ghi chú phát hành tiếng Việt: `RELEASE_NOTES_VI.md`.
+
 ---
 
 ## Overview
