@@ -21,13 +21,18 @@ from app.providers.fred_global import FREDGlobalProvider
 from app.providers.lai_suat_rates import LaiSuatRatesProvider
 
 # Configure logging
+_handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+try:
+    Path("logs").mkdir(parents=True, exist_ok=True)
+    _handlers.append(logging.FileHandler(str(Path("logs") / "ingest.log")))
+except Exception:
+    # Logging to file is optional; tests and some deployments may not have a writable CWD.
+    pass
+
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper()),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('logs/ingest.log')
-    ]
+    handlers=_handlers,
 )
 logger = logging.getLogger(__name__)
 

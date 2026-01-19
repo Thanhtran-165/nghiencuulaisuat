@@ -218,25 +218,25 @@ class TestCoverageAPI:
 
 
 class TestUIRoutes:
-    """Test UI route rendering"""
+    """Test UI route redirect (backend is API-only)"""
 
     def test_auctions_page(self, client: TestClient):
-        """Test GET /auctions"""
-        response = client.get("/auctions")
+        """Test GET /auctions redirects to Next.js when requesting HTML"""
+        response = client.get("/auctions", headers={"accept": "text/html"}, follow_redirects=False)
 
-        assert response.status_code == 200
-        assert 'text/html' in response.headers['content-type']
+        assert response.status_code in (302, 307)
+        assert response.headers.get("location", "").startswith("http")
 
     def test_secondary_page(self, client: TestClient):
-        """Test GET /secondary"""
-        response = client.get("/secondary")
+        """Test GET /secondary redirects to Next.js when requesting HTML"""
+        response = client.get("/secondary", headers={"accept": "text/html"}, follow_redirects=False)
 
-        assert response.status_code == 200
-        assert 'text/html' in response.headers['content-type']
+        assert response.status_code in (302, 307)
+        assert response.headers.get("location", "").startswith("http")
 
     def test_policy_page(self, client: TestClient):
-        """Test GET /policy"""
-        response = client.get("/policy")
+        """Test GET /policy redirects to Next.js when requesting HTML"""
+        response = client.get("/policy", headers={"accept": "text/html"}, follow_redirects=False)
 
-        assert response.status_code == 200
-        assert 'text/html' in response.headers['content-type']
+        assert response.status_code in (302, 307)
+        assert response.headers.get("location", "").startswith("http")
