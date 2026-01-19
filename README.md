@@ -138,6 +138,10 @@ PROVIDERS="hnx_yield_curve sbv_interbank lai_suat_rates" ./scripts/install_launc
 - `docs/RUNBOOK_SMOKE.md` - Smoke/runbook checks
 - `docs/GLOBAL_DATA.md` - Optional global data (FRED)
 - `docs/AUDIT.md` - Audit notes and cleanup plan
+- `docs/METRICS_MAP.md` - Metrics/data lineage map
+- `docs/ACADEMIC_REVIEW.md` - Academic review (v1)
+- `docs/INTERPRETATION_GUIDE.md` - How to interpret metrics
+- `docs/ACCEPTANCE_CHECKLIST.md` - Release readiness checklist
 - `docs/history/README.md` - Archived phase docs
 
 ## Advanced Usage (for Developers)
